@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GaussianHelper — Simplified Gaussian Calculation Setup</title>
+  <meta name="description" content="A modern web tool for creating valid Gaussian .gjf input files with an intuitive graphical interface, molecular editor, and intelligent parameter configuration." />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- 3Dmol.js -->
+  <script src="https://3Dmol.org/build/3Dmol-min.js" defer></script>
+
+  <!-- JSME Molecule Editor (Commented out as 2D editor is disabled)
+  <script src="/jsme/jsme.nocache.js" defer></script>
+  -->
+
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='80'>⚛️</text></svg>" />
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- Header -->
+    <header id="app-header" class="app-header">
+      <div class="header-left">
+        <div class="header-logo">
+          <span class="logo-icon">⚛️</span>
+          <h1 class="logo-text">Gaussian<span class="logo-accent">Helper</span></h1>
+        </div>
+        <span class="header-version">v0.1-alpha by xharl</span>
+      </div>
+      <div class="header-right">
+        <button id="help-btn" class="btn btn-ghost btn-sm" title="Help & Getting Started">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Help
+        </button>
+        <div class="preset-dropdown-wrap">
+          <button id="preset-btn" class="btn btn-secondary btn-sm" title="Load a preset configuration">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            Presets
+          </button>
+          <div id="preset-dropdown" class="preset-dropdown hidden">
+            <!-- Preset cards injected here -->
+          </div>
+        </div>
+        <button id="copy-btn" class="btn btn-ghost btn-sm" title="Copy .gjf to clipboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          Copy
+        </button>
+        <button id="export-btn" class="btn btn-primary btn-sm" title="Download as .gjf file">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export .gjf
+        </button>
+      </div>
+    </header>
+
+    <!-- Main 3-Panel Layout -->
+    <main class="app-main">
+      <!-- Left Panel: Molecule Input -->
+      <aside id="panel-left" class="panel panel-left">
+        <div class="panel-header">
+          <span class="panel-icon">🧬</span>
+          <span class="panel-title">Molecule</span>
+        </div>
+        <div class="panel-body" id="molecule-panel">
+          <!-- MoleculeInput component renders here -->
+        </div>
+      </aside>
+
+      <!-- Center Panel: Parameters -->
+      <section id="panel-center" class="panel panel-center">
+        <div class="panel-header">
+          <span class="panel-icon">⚙️</span>
+          <span class="panel-title">Parameters</span>
+        </div>
+        <div class="panel-body" id="parameter-panel">
+          <!-- ParameterPanel component renders here -->
+        </div>
+      </section>
+
+      <!-- Right Panel: Output -->
+      <section id="panel-right" class="panel panel-right">
+        <div class="panel-header">
+          <span class="panel-icon">📄</span>
+          <span class="panel-title">Output</span>
+        </div>
+        <div class="panel-body" id="output-panel">
+          <!-- 3D Viewer + GJF Preview render here -->
+        </div>
+      </section>
+    </main>
+
+    <!-- Help / Getting Started Modal -->
+    <div id="help-modal" class="modal-overlay hidden">
+      <div class="modal animate-in" style="max-width: 620px;">
+        <div class="modal-header">
+          <span class="modal-title" style="display: flex; align-items: center; gap: var(--space-2);">
+            <span style="font-size: var(--text-xl);">⚛️</span> Getting Started
+          </span>
+          <button id="close-help-btn" class="btn btn-ghost btn-icon" style="font-size: var(--text-md); height: 28px; width: 28px; border-radius: var(--radius-sm);">✕</button>
+        </div>
+        <div class="modal-body" style="line-height: var(--leading-relaxed); font-size: var(--text-sm); display: flex; flex-direction: column; gap: var(--space-4);">
+          <p style="color: var(--text-secondary); margin-bottom: 2px;">
+            GaussianHelper makes it simple to prepare Gaussian Job Files (<code style="font-family: var(--font-mono); color: var(--text-accent);">.gjf</code>) and configure calculation workflows. Follow these basic steps:
+          </p>
+
+          <div style="border-left: 2px solid var(--accent-primary); padding-left: var(--space-3);">
+            <h4 style="color: var(--text-primary); font-weight: 600; font-size: var(--text-base); margin-bottom: 2px;">1. Load a Chemical Structure</h4>
+            <p style="color: var(--text-secondary); font-size: 12px; margin-bottom: 6px;">
+              Under the <strong>Molecule</strong> panel, choose your input method:
+            </p>
+            <ul style="padding-left: var(--space-4); color: var(--text-tertiary); font-size: 11px; display: flex; flex-direction: column; gap: 2px;">
+              <li><strong>Draw Structure</strong>: Sketch structures manually inside the 2D canvas editor.</li>
+              <li><strong>SMILES Input</strong>: Enter chemical strings (e.g. <code style="font-family: var(--font-mono);">O</code> for water, <code style="font-family: var(--font-mono);">c1ccccc1</code> for benzene) to auto-generate 3D coords.</li>
+              <li><strong>Upload File</strong>: Open chemical coordinate structures directly from <code style="font-family: var(--font-mono); font-size: 10px;">.cdxml</code>, <code style="font-family: var(--font-mono); font-size: 10px;">.mol</code>, <code style="font-family: var(--font-mono); font-size: 10px;">.sdf</code>, or <code style="font-family: var(--font-mono); font-size: 10px;">.xyz</code> files.</li>
+            </ul>
+          </div>
+
+          <div style="border-left: 2px solid var(--accent-secondary); padding-left: var(--space-3);">
+            <h4 style="color: var(--text-primary); font-weight: 600; font-size: var(--text-base); margin-bottom: 2px;">2. Configure Calculation Theory</h4>
+            <p style="color: var(--text-secondary); font-size: 12px; margin-bottom: 2px;">
+              In the <strong>Parameters</strong> panel, set parallel processor cores, memory parameters, checkpoint file path, method functional, basis sets, and implicit solvation.
+            </p>
+            <p style="color: var(--text-tertiary); font-size: 11px;">
+              💡 <em>Pro Tip: Use the <strong>Presets</strong> dropdown in the top header to apply pre-configured energy optimization or frequency sweeps in a single click.</em>
+            </p>
+          </div>
+
+          <div style="border-left: 2px solid var(--accent-tertiary); padding-left: var(--space-3);">
+            <h4 style="color: var(--text-primary); font-weight: 600; font-size: var(--text-base); margin-bottom: 2px;">3. Preview & Validate Input File</h4>
+            <p style="color: var(--text-secondary); font-size: 12px;">
+              Observe the live rendered 3D visualizer and `.gjf` syntax highlighter under the <strong>Current Job</strong> tab. Any parameter problems (like charge-multiplicity parity mismatches) will trigger warning alert bars.
+            </p>
+          </div>
+
+          <div style="border-left: 2px solid var(--success); padding-left: var(--space-3);">
+            <h4 style="color: var(--text-primary); font-weight: 600; font-size: var(--text-base); margin-bottom: 2px;">4. Assemble Job Batches</h4>
+            <p style="color: var(--text-secondary); font-size: 12px; margin-bottom: 4px;">
+              Generate execution lists for multiple calculations under the <strong>Batch Queue</strong> tab:
+            </p>
+            <ul style="padding-left: var(--space-4); color: var(--text-tertiary); font-size: 11px; display: flex; flex-direction: column; gap: 2px;">
+              <li>Click <strong>Add to Batch</strong> inside the GJF code preview to queue the active configuration.</li>
+              <li>Upload existing <code style="font-family: var(--font-mono); font-size: 10px;">.gjf</code> files to batch-process historical setups.</li>
+              <li>Choose between Windows Batch Control (<code style="font-family: var(--font-mono); font-size: 10px;">.bcf</code>) or Linux Execution Command script (<code style="font-family: var(--font-mono); font-size: 10px;">.sh</code>) targets.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="modal-footer" style="padding: var(--space-3) var(--space-5);">
+          <button id="help-close-footer-btn" class="btn btn-primary btn-sm" style="min-width: 80px;">Got it</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

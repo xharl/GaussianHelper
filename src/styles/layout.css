@@ -1,0 +1,441 @@
+/* ============================================================
+   GaussianHelper — Layout System
+   Three-panel responsive layout with glassmorphic header and
+   animated gradient dividers between panels.
+   ============================================================ */
+
+/* ── App Container ──────────────────────────────────────────── */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  position: relative;
+  z-index: var(--z-base);
+}
+
+
+/* ── App Header ─────────────────────────────────────────────── */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  min-height: 56px;
+  padding: 0 24px;
+  background: rgba(8, 9, 13, 0.75);
+  backdrop-filter: blur(var(--glass-blur-heavy));
+  -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
+  border-bottom: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+
+.app-header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(99, 102, 241, 0.2) 20%,
+    rgba(139, 92, 246, 0.3) 50%,
+    rgba(99, 102, 241, 0.2) 80%,
+    transparent
+  );
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-tight);
+}
+
+.header-logo-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--accent-gradient);
+  font-size: var(--text-sm);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+}
+
+.header-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--accent-tertiary);
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  border-radius: var(--radius-xs);
+  margin-left: var(--space-2);
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+
+/* ── Main Content Area ──────────────────────────────────────── */
+.app-main {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+
+/* ── Panels ─────────────────────────────────────────────────── */
+.panel {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-5);
+  position: relative;
+  background: transparent;
+}
+
+/* Animated gradient divider — right edge of panels */
+.panel-left,
+.panel-center {
+  position: relative;
+}
+
+.panel-left::after,
+.panel-center::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(99, 102, 241, 0.12) 15%,
+    rgba(139, 92, 246, 0.2) 40%,
+    rgba(99, 102, 241, 0.25) 50%,
+    rgba(139, 92, 246, 0.2) 60%,
+    rgba(99, 102, 241, 0.12) 85%,
+    transparent 100%
+  );
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Glow aura on dividers */
+.panel-left::before,
+.panel-center::before {
+  content: '';
+  position: absolute;
+  top: 10%;
+  right: -4px;
+  width: 8px;
+  height: 80%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(99, 102, 241, 0.06) 0%,
+    transparent 70%
+  );
+  z-index: 1;
+  pointer-events: none;
+  filter: blur(4px);
+}
+
+/* ─ Left Panel ─ */
+.panel-left {
+  width: 320px;
+  min-width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
+}
+
+/* ─ Center Panel ─ */
+.panel-center {
+  width: 340px;
+  min-width: 300px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
+}
+
+/* ─ Right Panel ─ */
+.panel-right {
+  flex: 1;
+  min-width: 400px;
+}
+
+
+/* ── Panel Header ───────────────────────────────────────────── */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 var(--space-4) 0;
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.panel-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--text-tertiary);
+  font-variant: small-caps;
+  user-select: none;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+
+/* ── Panel Scroll Fade ──────────────────────────────────────── */
+.panel-scroll-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Top / bottom fade for scroll indication */
+.panel-scroll-fade-top,
+.panel-scroll-fade-bottom {
+  position: sticky;
+  left: 0;
+  right: 0;
+  height: 20px;
+  pointer-events: none;
+  z-index: 3;
+  flex-shrink: 0;
+}
+
+.panel-scroll-fade-top {
+  top: 0;
+  background: linear-gradient(to bottom, var(--bg-primary), transparent);
+}
+
+.panel-scroll-fade-bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--bg-primary), transparent);
+}
+
+
+/* ── Mobile Tab Bar (visible < 768px) ───────────────────────── */
+.mobile-tab-bar {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+
+.mobile-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+  border: 1px solid transparent;
+}
+
+.mobile-tab:hover {
+  color: var(--text-secondary);
+  background: var(--bg-panel);
+}
+
+.mobile-tab.active {
+  color: var(--text-primary);
+  background: var(--bg-panel);
+  border-color: var(--border-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.mobile-tab-icon {
+  font-size: var(--text-md);
+}
+
+
+/* ── Responsive: Two Columns (< 1200px) ────────────────────── */
+@media (max-width: 1199px) {
+  .app-main {
+    flex-wrap: wrap;
+  }
+
+  .panel-left {
+    width: 300px;
+    min-width: 260px;
+  }
+
+  .panel-center {
+    width: 300px;
+    min-width: 260px;
+  }
+
+  .panel-right {
+    flex-basis: 100%;
+    min-width: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  /* Remove the right divider from center panel since right goes full width */
+  .panel-center::after,
+  .panel-center::before {
+    display: none;
+  }
+}
+
+
+/* ── Responsive: Single Column with Tabs (< 768px) ─────────── */
+@media (max-width: 767px) {
+  .app-header {
+    height: 48px;
+    padding: 0 16px;
+  }
+
+  .header-badge {
+    display: none;
+  }
+
+  .mobile-tab-bar {
+    display: flex;
+  }
+
+  .app-main {
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+
+  .panel {
+    padding: var(--space-4);
+  }
+
+  .panel-left,
+  .panel-center,
+  .panel-right {
+    width: 100%;
+    min-width: 0;
+    flex-shrink: 0;
+    border-right: none;
+    border-top: none;
+  }
+
+  /* Hide non-active panels in mobile tab mode */
+  .panel.hidden-mobile {
+    display: none;
+  }
+
+  .panel.active-mobile {
+    display: flex;
+    flex: 1;
+  }
+
+  /* Remove all panel dividers */
+  .panel-left::after,
+  .panel-left::before,
+  .panel-center::after,
+  .panel-center::before {
+    display: none;
+  }
+}
+
+
+/* ── Panel Transitions ──────────────────────────────────────── */
+.panel-transition-enter {
+  animation: panelEnter 0.3s ease forwards;
+}
+
+.panel-transition-exit {
+  animation: panelExit 0.2s ease forwards;
+}
+
+@keyframes panelEnter {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes panelExit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+
+/* ── Divider Utility ────────────────────────────────────────── */
+.divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-4) 0;
+  flex-shrink: 0;
+}
+
+.divider-accent {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--border-primary) 50%,
+    transparent
+  );
+}
