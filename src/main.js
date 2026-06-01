@@ -13,6 +13,7 @@ import { GJFPreview } from './components/GJFPreview.js';
 import { Viewer3D } from './components/Viewer3D.js';
 import { Header } from './components/Header.js';
 import { BatchGenerator } from './components/BatchGenerator.js';
+import { getHillFormula } from './utils/elements.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   // Elements
@@ -77,35 +78,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('batch-tab-content').classList.remove('hidden');
   };
 
-  /**
-   * Generates a molecular formula using the Hill system notation
-   */
-  function getHillFormula(atoms) {
-    if (!atoms || atoms.length === 0) return 'molecule';
-    const counts = {};
-    for (const atom of atoms) {
-      const sym = atom.symbol;
-      counts[sym] = (counts[sym] || 0) + 1;
-    }
-    
-    let formula = '';
-    if (counts['C']) {
-      formula += `C${counts['C'] > 1 ? counts['C'] : ''}`;
-      if (counts['H']) {
-        formula += `H${counts['H'] > 1 ? counts['H'] : ''}`;
-      }
-      const elements = Object.keys(counts).filter(el => el !== 'C' && el !== 'H').sort();
-      for (const el of elements) {
-        formula += `${el}${counts[el] > 1 ? counts[el] : ''}`;
-      }
-    } else {
-      const elements = Object.keys(counts).sort();
-      for (const el of elements) {
-        formula += `${el}${counts[el] > 1 ? counts[el] : ''}`;
-      }
-    }
-    return formula;
-  }
 
   // Initialize components
   const viewer3d = new Viewer3D(viewerContainer);

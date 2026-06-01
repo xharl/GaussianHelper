@@ -110,3 +110,37 @@ export function getAtomicNumber(symbol) {
   const el = elementBySymbol[normalised];
   return el ? el.atomicNumber : null;
 }
+
+/**
+ * Generates a molecular formula using the Hill system notation:
+ * Carbon first, then Hydrogen, then all other elements in alphabetical order.
+ * If Carbon is not present, all elements are sorted alphabetically.
+ * @param {Object[]} atoms - Array of atom objects with symbol property
+ * @returns {string} The Hill system molecular formula
+ */
+export function getHillFormula(atoms) {
+  if (!atoms || atoms.length === 0) return 'molecule';
+  const counts = {};
+  for (const atom of atoms) {
+    const sym = atom.symbol;
+    counts[sym] = (counts[sym] || 0) + 1;
+  }
+  
+  let formula = '';
+  if (counts['C']) {
+    formula += `C${counts['C'] > 1 ? counts['C'] : ''}`;
+    if (counts['H']) {
+      formula += `H${counts['H'] > 1 ? counts['H'] : ''}`;
+    }
+    const elements = Object.keys(counts).filter(el => el !== 'C' && el !== 'H').sort();
+    for (const el of elements) {
+      formula += `${el}${counts[el] > 1 ? counts[el] : ''}`;
+    }
+  } else {
+    const elements = Object.keys(counts).sort();
+    for (const el of elements) {
+      formula += `${el}${counts[el] > 1 ? counts[el] : ''}`;
+    }
+  }
+  return formula;
+}
