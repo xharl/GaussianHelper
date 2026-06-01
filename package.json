@@ -1,11 +1,11 @@
 {
-  "name": "brave-volta",
+  "name": "gaussian-helper",
   "version": "0.1.0-alpha",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/build-dist.js",
     "preview": "vite preview",
     "test": "vitest run"
   },
