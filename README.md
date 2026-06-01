@@ -4,6 +4,8 @@ GaussianHelper is a modern, responsive web application designed for computationa
 
 It runs entirely client-side, providing a fast, graphical tool for setting up inputs without any software dependencies. It also supports zero-installation local server launching to bypass CORS security policies.
 
+![GaussianHelper Screenshot](public/screenshot.png)
+
 ---
 
 ## 🌟 Key Features

@@ -6,6 +6,8 @@ Because modern browsers block ES modules and runtime dependencies from loading d
 
 We have packaged lightweight local launch scripts requiring **zero software installations**.
 
+![GaussianHelper Screenshot](screenshot.png)
+
 ---
 
 ## 🚀 How to Launch the Application
