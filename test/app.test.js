@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getSymbol, getAtomicNumber, getHillFormula } from '../src/utils/elements.js';
-import { validateChargeMultiplicity, validateMethodBasis, validateInputCompleteness } from '../src/utils/validation.js';
+import { validateChargeMultiplicity, validateMethodBasis, validateInputCompleteness, getTheoryRecommendations } from '../src/utils/validation.js';
 import { generateGJF } from '../src/generators/gjfGenerator.js';
 import { parseXYZ } from '../src/parsers/xyzParser.js';
 import { parseMOL } from '../src/parsers/molParser.js';
@@ -176,5 +176,58 @@ M  END
     expect(parsed.bonds[0].from).toBe(1);
     expect(parsed.bonds[0].to).toBe(2);
     expect(parsed.bonds[0].order).toBe(1);
+  });
+});
+
+describe('Theory Level Recommendations', () => {
+  it('should recommend ECP basis sets for heavy elements or transition metals', () => {
+    const configWithHeavy = {
+      route: { method: 'B3LYP', basisSet: '6-31G(d)' },
+      atoms: [{ symbol: 'I', x: 0, y: 0, z: 0 }]
+    };
+    const recs = getTheoryRecommendations(configWithHeavy);
+    expect(recs.some(r => r.includes('Heavy elements') && r.includes('ECP'))).toBe(true);
+
+    const configWithTM = {
+      route: { method: 'B3LYP', basisSet: '6-31G(d)' },
+      atoms: [{ symbol: 'Fe', x: 0, y: 0, z: 0 }]
+    };
+    const recsTM = getTheoryRecommendations(configWithTM);
+    expect(recsTM.some(r => r.includes('Transition metals') && r.includes('ECP'))).toBe(true);
+  });
+
+  it('should recommend diffuse functions for anions and excited states', () => {
+    const configAnion = {
+      route: { method: 'B3LYP', basisSet: '6-31G(d)' },
+      charge: -1,
+      atoms: [{ symbol: 'O', x: 0, y: 0, z: 0 }]
+    };
+    const recs = getTheoryRecommendations(configAnion);
+    expect(recs.some(r => r.includes('diffuse functions') && r.includes('anions'))).toBe(true);
+
+    const configExcited = {
+      route: { method: 'B3LYP', basisSet: '6-31G(d)', jobType: 'TD' },
+      atoms: [{ symbol: 'O', x: 0, y: 0, z: 0 }]
+    };
+    const recsExcited = getTheoryRecommendations(configExcited);
+    expect(recsExcited.some(r => r.includes('diffuse functions') && r.includes('excited-state'))).toBe(true);
+  });
+
+  it('should recommend dispersion corrections for DFT functionals lacking them', () => {
+    const configDFT = {
+      route: { method: 'B3LYP', basisSet: '6-31G(d)', dispersion: '' },
+      atoms: [{ symbol: 'O', x: 0, y: 0, z: 0 }]
+    };
+    const recs = getTheoryRecommendations(configDFT);
+    expect(recs.some(r => r.includes('dispersion correction') && r.includes('EmpiricalDispersion=GD3BJ'))).toBe(true);
+  });
+
+  it('should recommend larger basis sets for electron correlation methods', () => {
+    const configMP2 = {
+      route: { method: 'MP2', basisSet: '6-31G' },
+      atoms: [{ symbol: 'O', x: 0, y: 0, z: 0 }]
+    };
+    const recs = getTheoryRecommendations(configMP2);
+    expect(recs.some(r => r.includes('Electron correlation methods') && r.includes('cc-pVTZ'))).toBe(true);
   });
 });

@@ -41,7 +41,7 @@ If port `8080` is currently in use by another application on your system, you ca
 ---
 
 ## 📄 License & Credits
-* **Version**: v0.1-alpha
+* **Version**: v0.2-alpha
 * **Developer**: xharl
 * **License**: Released under the GNU General Public License v3 (GPLv3). See `LICENSE` for details.
 

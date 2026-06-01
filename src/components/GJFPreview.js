@@ -4,7 +4,7 @@
  */
 
 import { generateGJF } from '../generators/gjfGenerator.js';
-import { validateInputCompleteness } from '../utils/validation.js';
+import { validateInputCompleteness, getTheoryRecommendations } from '../utils/validation.js';
 
 export class GJFPreview {
   /**
@@ -73,7 +73,8 @@ export class GJFPreview {
       const config = this.buildConfig(params, molecule);
       this.currentGJF = generateGJF(config);
       const validation = validateInputCompleteness(config);
-      this.renderCode(this.currentGJF, validation);
+      const recommendations = getTheoryRecommendations(config);
+      this.renderCode(this.currentGJF, validation, recommendations);
     } catch (err) {
       this.currentGJF = '';
       const codeBody = this.container.querySelector('#gjf-code');
@@ -131,7 +132,7 @@ export class GJFPreview {
   /**
    * Render the GJF content with syntax highlighting
    */
-  renderCode(gjf, validation) {
+  renderCode(gjf, validation, recommendations = []) {
     const codeBody = this.container.querySelector('#gjf-code');
     const warningsContainer = this.container.querySelector('#gjf-warnings');
 
@@ -144,18 +145,37 @@ export class GJFPreview {
       return;
     }
 
+    let htmlContent = '';
+
     if (validation && !validation.valid && validation.errors && validation.errors.length > 0) {
-      if (warningsContainer) {
-        warningsContainer.innerHTML = `
-          <div class="form-warning" style="margin: 12px 16px 0 16px;">
-            <div style="font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; color: var(--warning);">
-              <span class="warning-icon">⚠️</span> Gaussian Input Verification Warnings
-            </div>
-            <ul style="margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 11px;">
-              ${validation.errors.map(err => `<li style="margin-bottom: 2px;">${err}</li>`).join('')}
-            </ul>
+      htmlContent += `
+        <div class="form-warning" style="margin: 12px 16px 0 16px;">
+          <div style="font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; color: var(--warning);">
+            <span class="warning-icon">⚠️</span> Gaussian Input Verification Warnings
           </div>
-        `;
+          <ul style="margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 11px;">
+            ${validation.errors.map(err => `<li style="margin-bottom: 2px;">${err}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+
+    if (recommendations && recommendations.length > 0) {
+      htmlContent += `
+        <div class="form-recommendation" style="margin: 12px 16px 0 16px; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid rgba(59, 130, 246, 0.2); background: rgba(59, 130, 246, 0.05);">
+          <div style="font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; color: var(--info);">
+            <span class="info-icon">💡</span> Theoretical Recommendations
+          </div>
+          <ul style="margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 11px; line-height: 1.4;">
+            ${recommendations.map(rec => `<li style="margin-bottom: 2px;">${rec}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+
+    if (htmlContent) {
+      if (warningsContainer) {
+        warningsContainer.innerHTML = htmlContent;
         warningsContainer.classList.remove('hidden');
       }
     } else {

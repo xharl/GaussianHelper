@@ -275,3 +275,97 @@ export function validateInputCompleteness(state) {
     errors,
   };
 }
+
+/**
+ * Analyze the calculation configuration and provide helpful warnings/recommendations.
+ *
+ * @param {Object} config - The GJF configuration.
+ * @returns {string[]} An array of recommendation strings.
+ */
+export function getTheoryRecommendations(config) {
+  const recommendations = [];
+  if (!config) return recommendations;
+
+  const atoms = Array.isArray(config.atoms) ? config.atoms : [];
+  const route = config.route || {};
+  const method = (route.method || '').trim().toUpperCase();
+  const basisSet = (route.basisSet || '').trim().toUpperCase();
+  const charge = Number.isInteger(config.charge) ? config.charge : 0;
+  const jobType = (route.jobType || '').trim().toUpperCase();
+  const dispersion = (route.dispersion || '').trim();
+
+  // 1. Heavy Element & Transition Metal ECP check
+  // Check if there are elements with Z > 36 or transition metals (21-30, 39-48, 72-80)
+  let hasHeavyElement = false;
+  let hasTransitionMetal = false;
+  
+  for (const atom of atoms) {
+    const symbol = atom.symbol;
+    const z = getAtomicNumber(symbol);
+    if (z !== null) {
+      if (z > 36) {
+        hasHeavyElement = true;
+      }
+      if ((z >= 21 && z <= 30) || (z >= 39 && z <= 48) || (z >= 72 && z <= 80)) {
+        hasTransitionMetal = true;
+      }
+    }
+  }
+
+  // Pople basis sets (e.g. 6-31G, 6-311G, 3-21G)
+  const isPopleBasis = basisSet.includes('6-31') || basisSet.includes('3-21');
+  // Dunning correlation consistent sets (cc-pV*)
+  const isDunningBasis = basisSet.startsWith('CC-PV') || basisSet.startsWith('AUG-CC-PV');
+
+  if (hasHeavyElement && (isPopleBasis || isDunningBasis)) {
+    recommendations.push(
+      `Heavy elements (Z > 36) are present. Standard basis sets like ${route.basisSet || 'none'} may fail or lack parameters. ` +
+      `Consider using an Effective Core Potential (ECP) basis set (e.g., LanL2DZ or SDD) or a Karlsruhe basis set (e.g., def2-TZVP).`
+    );
+  } else if (hasTransitionMetal && isPopleBasis && !basisSet.includes('LANL') && !basisSet.includes('SDD')) {
+    recommendations.push(
+      `Transition metals are present. Pople basis sets (like ${route.basisSet || 'none'}) are often poor or unavailable. ` +
+      `An ECP basis set (e.g., LanL2DZ or SDD) is recommended for transition metal centers.`
+    );
+  }
+
+  // 2. Anion or Excited State Diffuse Function Check
+  const isAnion = charge < 0;
+  const isExcitedState = jobType.includes('TD') || jobType.includes('NSTATES');
+  const hasDiffuse = basisSet.includes('+') || basisSet.startsWith('AUG-');
+
+  if (isAnion && !hasDiffuse && methodNeedsBasis(route.method)) {
+    recommendations.push(
+      `For systems with a negative charge (anions), adding diffuse functions (e.g., + in 6-31+G(d) or aug- in Dunning basis sets) ` +
+      `is highly recommended to describe weakly bound electron density.`
+    );
+  } else if (isExcitedState && !hasDiffuse && methodNeedsBasis(route.method)) {
+    recommendations.push(
+      `For excited-state calculations (TD-DFT), adding diffuse functions (e.g., 6-31+G(d) or aug-cc-pVDZ) is recommended ` +
+      `to properly capture diffuse excited state wavefunctions (Rydberg states).`
+    );
+  }
+
+  // 3. Dispersion correction in DFT
+  const isDft = ['B3LYP', 'PBE', 'PBE0', 'OLYP', 'CAM-B3LYP', 'BLYP', 'BP86'].some(kw => method.includes(kw));
+  if (isDft && !dispersion) {
+    recommendations.push(
+      `Method ${route.method} is a DFT functional without dispersion correction. For geometries and non-covalent interactions, ` +
+      `consider adding a dispersion correction (e.g., EmpiricalDispersion=GD3BJ).`
+    );
+  }
+
+  // 4. Post-HF Correlation Method Basis Set Size Check
+  const isCorrelationMethod = ['MP2', 'MP3', 'MP4', 'CCSD', 'QCISD'].some(kw => method.includes(kw));
+  const isSmallBasis = basisSet.includes('3-21') || (basisSet.includes('6-31') && !basisSet.includes('6-311') && !basisSet.includes('+') && !basisSet.includes('D'));
+  
+  if (isCorrelationMethod && isSmallBasis) {
+    recommendations.push(
+      `Electron correlation methods (like ${route.method}) converge very slowly with basis set size. ` +
+      `Using small double-zeta basis sets (like ${route.basisSet || 'none'}) is not recommended. Consider using cc-pVTZ or def2-TZVP.`
+    );
+  }
+
+  return recommendations;
+}
+
