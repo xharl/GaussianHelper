@@ -33,6 +33,9 @@ If port `8080` is currently in use by another application on your system, you ca
 - **Windows**: Right-click `run.bat`, select *Edit*, and change the `$port = 8080;` value near the top of the file to a different port (e.g. `8085`).
 - **Linux**: Edit `run.sh` in a text editor and change the `PORT=8080` line to your desired port number.
 
+## 🤖 AI Disclaimer
+* **Note**: This project has been developed with the assistance of agentic artificial intelligence (AI) models. While the application, files parsers, and input generators have been tested, users are advised to verify their generated Gaussian Job Files (`.gjf`) and execution scripts before running calculations on production clusters.
+
 ---
 
 ## 📄 License & Credits

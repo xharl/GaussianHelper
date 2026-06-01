@@ -67,6 +67,9 @@ No software installation is required.
    ```
 3. This spins up Python's built-in server and opens the browser. Hit `Ctrl+C` to terminate the server.
 
+## 🤖 AI Disclaimer
+* **Note**: This project has been developed with the assistance of agentic artificial intelligence (AI) models. While the application, files parsers, and input generators have been tested, users are advised to verify their generated Gaussian Job Files (`.gjf`) and execution scripts before running calculations on production clusters.
+
 ---
 
 ## 📄 License & Credits
