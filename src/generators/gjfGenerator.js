@@ -195,7 +195,6 @@ export function generateGJF(config) {
 
   // ── Trailing blank line (required by Gaussian) ──
   sections.push('');
-  sections.push('');
 
   return sections.join('\n');
 }

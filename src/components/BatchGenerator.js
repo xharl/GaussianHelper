@@ -564,6 +564,8 @@ export class BatchGenerator {
   }
 
   showToast(message, type = 'info') {
+    // Info-level events don't create notifications
+    if (type === 'info') return;
     const container = document.getElementById('toast-container');
     if (!container) return;
     const toast = document.createElement('div');

@@ -43,7 +43,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const previewContainer = document.getElementById('preview-container-target');
   const batchTabContent = document.getElementById('batch-tab-content');
 
-  // Wire up tab switching
+  // Initialize components
+  const viewer3d = new Viewer3D(viewerContainer);
+
+  // Wire up tab switching (after viewer3d init so the reference is valid)
   const tabButtons = outputPanel.querySelectorAll('#output-tabs .tab');
   tabButtons.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -65,22 +68,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
-
-  const showBatchTab = () => {
-    tabButtons.forEach(b => {
-      if (b.dataset.outputTab === 'batch') {
-        b.classList.add('active');
-      } else {
-        b.classList.remove('active');
-      }
-    });
-    document.getElementById('calc-tab-content').classList.add('hidden');
-    document.getElementById('batch-tab-content').classList.remove('hidden');
-  };
-
-
-  // Initialize components
-  const viewer3d = new Viewer3D(viewerContainer);
   
   let batchGenerator;
 
@@ -202,6 +189,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Helper to show global toast notifications
   function showToast(message, type = 'info') {
+    // Info-level events don't create notifications
+    if (type === 'info') return;
     const container = document.getElementById('toast-container');
     if (!container) return;
     const toast = document.createElement('div');
