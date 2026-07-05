@@ -130,7 +130,7 @@ describe('Gaussian Job File (GJF) Generator', () => {
     expect(gjf).toContain('0 1');
     expect(gjf).toContain(' O       0.000000    0.000000    0.119700');
     expect(gjf).toContain(' H       0.000000    0.761500   -0.478900');
-    expect(gjf.endsWith('\n\n')).toBe(true); // Must end with a blank line
+    expect(gjf.endsWith('\n')).toBe(true); // Must end with a single blank line
   });
 });
 
