@@ -3,6 +3,8 @@
  * @module parsers/xyzParser
  */
 
+import { getSymbol, getAtomicNumber } from '../utils/elements.js';
+
 /**
  * @typedef {Object} XyzAtom
  * @property {string} symbol - Element symbol.
@@ -32,9 +34,9 @@
  * The parser is tolerant of:
  * - Leading/trailing whitespace and blank lines
  * - Mixed tab/space delimiters
- * - Atomic numbers used in place of symbols (converted via a basic lookup)
- * - Files with fewer atom lines than declared (parses what is available
- *   but warns in a non-fatal way)
+ * - Atomic numbers used in place of symbols (converted via the periodic table)
+ * - Blank lines between atom records
+ * - A complete set of atom records matching the declared count is required
  *
  * @param {string} content - The XYZ file content.
  * @returns {XyzResult} Parsed atom coordinates and title.
@@ -62,75 +64,59 @@ export function parseXYZ(content) {
 
   // Line 1: atom count
   const countLine = lines[startIdx].trim();
-  const declaredCount = parseInt(countLine, 10);
+  const declaredCount = Number(countLine);
 
-  if (isNaN(declaredCount) || declaredCount < 0) {
+  if (!/^\d+$/.test(countLine) || !Number.isSafeInteger(declaredCount) || declaredCount < 1) {
     throw new Error(
-      `First line of XYZ file must be the number of atoms, got "${countLine}".`
+      `First line of XYZ file must be a positive integer atom count, got "${countLine}".`
     );
   }
 
   // Line 2: title / comment (may be empty)
   const title = (startIdx + 1 < lines.length) ? lines[startIdx + 1].trim() : '';
 
-  // Lines 3+: atom data
+  // Lines 3+: read declared atom records, ignoring blank lines between them.
   const atoms = [];
-  const atomLinesStart = startIdx + 2;
-  const atomLinesEnd = Math.min(atomLinesStart + declaredCount, lines.length);
-
-  for (let i = atomLinesStart; i < atomLinesEnd; i++) {
+  let i = startIdx + 2;
+  while (i < lines.length && atoms.length < declaredCount) {
     const line = lines[i].trim();
-    if (line === '') continue; // skip blank lines within the block
+    i++;
+    if (line === '') continue;
 
     const parts = line.split(/\s+/);
     if (parts.length < 4) {
       throw new Error(
-        `XYZ atom line ${i - startIdx + 1} has ${parts.length} fields (need ≥ 4): "${line}".`
+        `XYZ atom line ${i - startIdx} has ${parts.length} fields (need ≥ 4): "${line}".`
       );
     }
 
-    let symbol = parts[0];
-    const x = parseFloat(parts[1]);
-    const y = parseFloat(parts[2]);
-    const z = parseFloat(parts[3]);
-
-    // If the symbol looks like a number, treat it as an atomic number
-    if (/^\d+$/.test(symbol)) {
-      symbol = atomicNumberToSymbol(parseInt(symbol, 10));
+    const rawSymbol = parts[0];
+    let symbol;
+    if (/^\d+$/.test(rawSymbol)) {
+      symbol = getSymbol(Number(rawSymbol));
     } else {
-      // Normalise case: first letter uppercase, rest lowercase
-      symbol = symbol.charAt(0).toUpperCase() + symbol.slice(1).toLowerCase();
+      symbol = rawSymbol.charAt(0).toUpperCase() + rawSymbol.slice(1).toLowerCase();
     }
 
-    if (isNaN(x) || isNaN(y) || isNaN(z)) {
+    if (!symbol || getAtomicNumber(symbol) === null) {
+      throw new Error(`Unknown element in XYZ atom line ${i - startIdx}: "${rawSymbol}".`);
+    }
+
+    const coordinates = parts.slice(1, 4).map(Number);
+    if (!coordinates.every(Number.isFinite)) {
       throw new Error(
-        `Invalid coordinates on XYZ line ${i - startIdx + 1}: "${line}".`
+        `Invalid coordinates on XYZ line ${i - startIdx}: "${line}".`
       );
     }
 
-    atoms.push({ symbol, x, y, z });
+    atoms.push({ symbol, x: coordinates[0], y: coordinates[1], z: coordinates[2] });
   }
 
-  if (atoms.length === 0) {
-    throw new Error('No atom coordinate lines found in XYZ file.');
+  if (atoms.length !== declaredCount) {
+    throw new Error(
+      `XYZ file declares ${declaredCount} atoms but only found ${atoms.length}.`
+    );
   }
 
   return { atoms, title };
-}
-
-/**
- * Convert an atomic number to an element symbol (basic inline lookup).
- * @param {number} num - Atomic number.
- * @returns {string} Element symbol, or `"X"` if unknown.
- */
-function atomicNumberToSymbol(num) {
-  const symbols = [
-    '', 'H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne',
-    'Na', 'Mg', 'Al', 'Si', 'P', 'S', 'Cl', 'Ar', 'K', 'Ca',
-    'Sc', 'Ti', 'V', 'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn',
-    'Ga', 'Ge', 'As', 'Se', 'Br', 'Kr', 'Rb', 'Sr', 'Y', 'Zr',
-    'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn',
-    'Sb', 'Te', 'I', 'Xe',
-  ];
-  return (num >= 1 && num < symbols.length) ? symbols[num] : 'X';
 }

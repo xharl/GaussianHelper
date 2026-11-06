@@ -84,7 +84,7 @@ export class GJFPreview {
         warningsContainer.innerHTML = '';
       }
       if (codeBody) {
-        codeBody.innerHTML = `<div class="code-placeholder error"><span>Error generating GJF: ${err.message}</span></div>`;
+        codeBody.innerHTML = `<div class="code-placeholder error"><span>Error generating GJF: ${this.escapeHtml(err.message)}</span></div>`;
       }
     }
   }
@@ -154,7 +154,7 @@ export class GJFPreview {
             <span class="warning-icon">⚠️</span> Gaussian Input Verification Warnings
           </div>
           <ul style="margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 11px;">
-            ${validation.errors.map(err => `<li style="margin-bottom: 2px;">${err}</li>`).join('')}
+            ${validation.errors.map(err => `<li style="margin-bottom: 2px;">${this.escapeHtml(err)}</li>`).join('')}
           </ul>
         </div>
       `;
@@ -167,7 +167,7 @@ export class GJFPreview {
             <span class="info-icon">💡</span> Theoretical Recommendations
           </div>
           <ul style="margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 11px; line-height: 1.4;">
-            ${recommendations.map(rec => `<li style="margin-bottom: 2px;">${rec}</li>`).join('')}
+            ${recommendations.map(rec => `<li style="margin-bottom: 2px;">${this.escapeHtml(rec)}</li>`).join('')}
           </ul>
         </div>
       `;
@@ -304,10 +304,13 @@ export class GJFPreview {
     if (!container) return;
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-      <span class="toast-icon">${type === 'success' ? '✓' : 'ℹ'}</span>
-      <span class="toast-message">${message}</span>
-    `;
+    const icon = document.createElement('span');
+    icon.className = 'toast-icon';
+    icon.textContent = type === 'success' ? '✓' : 'ℹ';
+    const text = document.createElement('span');
+    text.className = 'toast-message';
+    text.textContent = message;
+    toast.append(icon, text);
     container.appendChild(toast);
     setTimeout(() => {
       toast.classList.add('toast-exit');

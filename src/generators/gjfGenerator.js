@@ -27,6 +27,9 @@ const NO_BASIS_METHODS = new Set([
  * @returns {string} The formatted string (12 chars wide, 6 decimal places).
  */
 export function formatCoordinate(value) {
+  if (!Number.isFinite(value)) {
+    throw new Error('Atom coordinates must be finite numbers.');
+  }
   const formatted = value.toFixed(6);
   return formatted.padStart(12, ' ');
 }
@@ -183,9 +186,9 @@ export function generateGJF(config) {
   if (atoms.length > 0) {
     for (const atom of atoms) {
       const sym = (atom.symbol || 'X').padEnd(2, ' ');
-      const x = formatCoordinate(atom.x || 0);
-      const y = formatCoordinate(atom.y || 0);
-      const z = formatCoordinate(atom.z || 0);
+      const x = formatCoordinate(atom.x);
+      const y = formatCoordinate(atom.y);
+      const z = formatCoordinate(atom.z);
       sections.push(` ${sym}  ${x}${y}${z}`);
     }
   } else {

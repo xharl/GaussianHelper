@@ -5,8 +5,6 @@
  * @module parsers/smilesHandler
  */
 
-import { smilesTo3D } from '../utils/coordGenerator.js';
-
 /**
  * @typedef {Object} SmilesResult
  * @property {Array<{symbol: string, x: number, y: number, z: number}>} atoms
@@ -35,7 +33,7 @@ const SMILES_VALID_CHARS = /^[A-Za-z0-9@+\-\[\]\(\)\\\/=#%.$:~*!]+$/;
  * @throws {Error} If the SMILES string is empty, syntactically invalid,
  *   or chemically unparseable.
  */
-export function processSMILES(smiles) {
+export async function processSMILES(smiles) {
   // --- Basic input validation ---
   if (!smiles || typeof smiles !== 'string') {
     throw new Error('SMILES input must be a non-empty string.');
@@ -86,6 +84,7 @@ export function processSMILES(smiles) {
 
   // --- Generate 3D coordinates via OpenChemLib ---
   try {
+    const { smilesTo3D } = await import('../utils/coordGenerator.js');
     const result = smilesTo3D(cleaned);
 
     if (!result.atoms || result.atoms.length === 0) {

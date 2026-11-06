@@ -420,10 +420,14 @@ export class MoleculeInput {
       .map(([sym, count]) => `${sym}${count > 1 ? count : ''}`)
       .join('');
 
-    info.innerHTML = `
-      <div class="atom-info-formula">${formula}</div>
-      <div class="atom-info-count">${this.currentAtoms.length} atoms</div>
-    `;
+    info.replaceChildren();
+    const formulaElement = document.createElement('div');
+    formulaElement.className = 'atom-info-formula';
+    formulaElement.textContent = formula;
+    const countElement = document.createElement('div');
+    countElement.className = 'atom-info-count';
+    countElement.textContent = `${this.currentAtoms.length} atoms`;
+    info.append(formulaElement, countElement);
   }
 
   notifyChange() {
@@ -450,7 +454,12 @@ export class MoleculeInput {
 
     const result = validateChargeMultiplicity(this.charge, this.multiplicity, this.currentAtoms);
     if (!result.valid) {
-      warningEl.innerHTML = `<span class="warning-icon">⚠️</span> <span>${result.message}</span>`;
+      const icon = document.createElement('span');
+      icon.className = 'warning-icon';
+      icon.textContent = '⚠️';
+      const message = document.createElement('span');
+      message.textContent = result.message;
+      warningEl.replaceChildren(icon, message);
       warningEl.classList.remove('hidden');
     } else {
       warningEl.classList.add('hidden');
@@ -464,10 +473,13 @@ export class MoleculeInput {
     if (!container) return;
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-      <span class="toast-icon">${type === 'success' ? '✓' : type === 'error' ? '✕' : type === 'warning' ? '⚠' : 'ℹ'}</span>
-      <span class="toast-message">${message}</span>
-    `;
+    const icon = document.createElement('span');
+    icon.className = 'toast-icon';
+    icon.textContent = type === 'success' ? '✓' : type === 'error' ? '✕' : type === 'warning' ? '⚠' : 'ℹ';
+    const text = document.createElement('span');
+    text.className = 'toast-message';
+    text.textContent = message;
+    toast.append(icon, text);
     container.appendChild(toast);
     setTimeout(() => {
       toast.classList.add('toast-exit');

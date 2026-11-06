@@ -240,9 +240,11 @@ export function validateInputCompleteness(state) {
         const atom = state.atoms[i];
         if (!atom.symbol || typeof atom.symbol !== 'string') {
           errors.push(`Atom ${i + 1}: missing or invalid element symbol.`);
+        } else if (getAtomicNumber(atom.symbol) === null) {
+          errors.push(`Atom ${i + 1}: unknown element symbol "${atom.symbol}".`);
         }
-        if (typeof atom.x !== 'number' || typeof atom.y !== 'number' || typeof atom.z !== 'number') {
-          errors.push(`Atom ${i + 1} (${atom.symbol || '?'}): missing or invalid coordinates.`);
+        if (![atom.x, atom.y, atom.z].every(Number.isFinite)) {
+          errors.push(`Atom ${i + 1} (${atom.symbol || '?'}): coordinates must be finite numbers.`);
         }
       }
 

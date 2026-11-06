@@ -4,6 +4,8 @@ import { validateChargeMultiplicity, validateMethodBasis, validateInputCompleten
 import { generateGJF } from '../src/generators/gjfGenerator.js';
 import { parseXYZ } from '../src/parsers/xyzParser.js';
 import { parseMOL } from '../src/parsers/molParser.js';
+import { processSMILES } from '../src/parsers/smilesHandler.js';
+import { BatchGenerator } from '../src/components/BatchGenerator.js';
 
 describe('Periodic Table & Formula Utilities', () => {
   it('should look up element symbols correctly', () => {
@@ -104,6 +106,28 @@ describe('Input Validation Rules', () => {
     };
     expect(validateInputCompleteness(missingAtoms).valid).toBe(false);
   });
+  it('should reject unknown elements and non-finite coordinates in application state', () => {
+    const base = {
+      title: 'Test',
+      route: { method: 'B3LYP', basisSet: '6-31G(d)', jobType: 'Opt' },
+      charge: 0,
+      multiplicity: 1,
+      atoms: [{ symbol: 'O', x: 0, y: 0, z: 0 }],
+    };
+    const unknownElement = validateInputCompleteness({
+      ...base,
+      atoms: [{ symbol: '<svg/onload=alert(1)>', x: 0, y: 0, z: 0 }],
+    });
+    expect(unknownElement.valid).toBe(false);
+    expect(unknownElement.errors.join(' ')).toContain('unknown element symbol');
+
+    const invalidCoordinates = validateInputCompleteness({
+      ...base,
+      atoms: [{ symbol: 'O', x: NaN, y: 0, z: 0 }],
+    });
+    expect(invalidCoordinates.valid).toBe(false);
+    expect(invalidCoordinates.errors.join(' ')).toContain('coordinates must be finite');
+  });
 });
 
 describe('Gaussian Job File (GJF) Generator', () => {
@@ -131,6 +155,17 @@ describe('Gaussian Job File (GJF) Generator', () => {
     expect(gjf).toContain(' O       0.000000    0.000000    0.119700');
     expect(gjf).toContain(' H       0.000000    0.761500   -0.478900');
     expect(gjf.endsWith('\n')).toBe(true); // Must end with a single blank line
+  });
+
+  it('should reject non-finite coordinates instead of generating invalid Gaussian geometry', () => {
+    const config = {
+      route: { method: 'HF', basisSet: '6-31G' },
+      title: 'bad coordinates',
+      charge: 0,
+      multiplicity: 1,
+      atoms: [{ symbol: 'H', x: Infinity, y: 0, z: 0 }],
+    };
+    expect(() => generateGJF(config)).toThrow(/coordinates must be finite/i);
   });
 });
 
@@ -176,6 +211,52 @@ M  END
     expect(parsed.bonds[0].from).toBe(1);
     expect(parsed.bonds[0].to).toBe(2);
     expect(parsed.bonds[0].order).toBe(1);
+  });
+
+  it('should count atom records rather than raw XYZ lines', () => {
+    const parsed = parseXYZ('3\nWater\nO 0 0 0\n\nH 0 1 0\nH 0 -1 0\n');
+    expect(parsed.atoms).toHaveLength(3);
+  });
+
+  it('should reject truncated XYZ files instead of returning partial structures', () => {
+    expect(() => parseXYZ('3\nWater\nO 0 0 0\nH 0 1 0\n')).toThrow(/declares 3 atoms but only found 2/i);
+  });
+
+  it('should reject invalid elements and non-finite XYZ coordinates', () => {
+    expect(() => parseXYZ('1\nBad element\n<svg/onload=alert(1)> 0 0 0\n')).toThrow(/unknown element/i);
+    expect(() => parseXYZ('1\nBad coordinate\nH Infinity 0 0\n')).toThrow(/invalid coordinates/i);
+  });
+});
+
+describe('SMILES conversion', () => {
+  it('should lazily load the 3D coordinate generator and process a molecule', async () => {
+    const result = await processSMILES('O');
+    expect(result.atoms.length).toBeGreaterThan(0);
+    expect(result.molfile).toContain('M  END');
+  });
+});
+
+describe('Generated batch shell scripts', () => {
+  it('should escape untrusted HTML attribute content', () => {
+    const batch = Object.create(BatchGenerator.prototype);
+    expect(batch.escapeHtml('" autofocus onfocus="alert(1)')).toBe('&quot; autofocus onfocus=&quot;alert(1)');
+  });
+
+  it('should quote executable paths and filenames as shell literals', () => {
+    const batch = Object.create(BatchGenerator.prototype);
+    batch.format = 'sh';
+    batch.linuxCmd = 'g16"; echo INJECTED; #';
+    batch.queue = [{
+      id: '1',
+      inputName: 'sample$(touch pwned).gjf',
+      outputName: "sample'output.log",
+      gjfText: 'input',
+    }];
+
+    const script = batch.generateScriptContent();
+    expect(script).toContain(`GAUSSIAN_CMD='g16"; echo INJECTED; #'`);
+    expect(script).toContain(`< 'sample$(touch pwned).gjf'`);
+    expect(script).toContain(`> 'sample'"'"'output.log'`);
   });
 });
 
