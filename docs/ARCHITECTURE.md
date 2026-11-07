@@ -31,7 +31,8 @@ Gaussian log ──► streaming parser ──► parsed section ──► gate 
 | `Viewer3D` | Three.js/3Dmol-style viewer, conformer badge |
 | `BatchGenerator` | Queue of configs, `.bcf` and `.sh` export |
 | `GaussianOutputInspector` | Multi-file log inspection and CSV export |
-| `WorkflowWorkbench` | DAG task editor, checkpoint bindings, gates, import/validate, project save/load, bundle export, provenance display |
+| `WorkflowWorkbench` | DAG task editor, checkpoint bindings, gates, import/validate, project save/load, bundle export, provenance display, list/graph toggle, canvas interactions |
+| `WorkflowGraph` | Graph-view renderers: node cards, edge paths, block library, inspector panels |
 
 Components are deliberately free of business logic where possible; the testable logic lives in `src/utils/` and `src/generators/`.
 
@@ -64,6 +65,8 @@ Components are deliberately free of business logic where possible; the testable 
 |---|---|
 | `validation` | Input completeness, charge/multiplicity parity, fragment spec, method/basis compatibility, theory lint, cost estimate, route token validation |
 | `workflowModel` | Task/project creation, schema validation, sanitisation, topological sort, state derivation, invalidation, checkpoint-route detection |
+| `workflowGraph` | Pure layout and geometry: topological levels, saved positions, edge Bézier paths, connection legality (self/duplicate/cycle), bounds |
+| `workflowLabels` | Shared task-state labels for the list and graph views |
 | `workflowGates` | Gate evaluation: termination, SCF, optimisation, frequencies, thermochemistry, final energy, imaginary modes, route echo |
 | `workflowInput` | Canonical per-task input builder shared by single downloads, bundle export, and provenance |
 | `bundleExport` | ZIP bundle assembly, manifest, SLURM/PBS/plain-bash templates |
@@ -80,7 +83,7 @@ Components are deliberately free of business logic where possible; the testable 
 
 - **No autosave.** A reload loses the active configuration unless the user saved a project.
 - The active molecule/parameter state is in memory only.
-- A **workflow project** is an explicit `.ghproject.json` file: schema version, project metadata, tasks (config snapshot, filenames, dependencies, checkpoint source, gates, attempts, bounded provenance).
+- A **workflow project** is an explicit `.ghproject.json` file: schema version, project metadata, tasks (config snapshot, filenames, dependencies, checkpoint source, gates, attempts, bounded provenance, optional graph position).
 - Save sanitises to a whitelist and serialises; load validates every field, rejects unsupported schema versions, cycles, malformed evidence, and oversized files, then recomputes attempt outcomes from retained evidence rather than trusting stored verdicts.
 - Structured config fields (GenECP assignments, fragments, route-validation flags, conformer and provenance records) round-trip through save/load and are re-validated.
 
@@ -91,7 +94,7 @@ Gate evaluation returns one of three results: `pass`, `fail`, `unknown`. Any req
 ## Build and packaging
 
 - `npm run dev` — Vite dev server.
-- `npm test` — Vitest, 25 files / 388 tests, no browser required.
+- `npm test` — Vitest, 26 files / 406 tests, no browser required.
 - `npm run build` — `vite build` into `dist/`, then `scripts/build-dist.js` creates `dist.zip` and `dist.tar.gz` locally.
 - `vite.config.js` defines the app commit (`__APP_COMMIT__`) for provenance and aliases OpenChemLib's `resources.json` so MMFF94 tables are bundled for offline use.
 - Build outputs are gitignored; release bundles are attached to GitHub Releases.

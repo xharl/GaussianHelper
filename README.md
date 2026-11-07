@@ -141,6 +141,8 @@ Only the keyword that owns a parenthesised list is token-checked: `SCF=(Tight,Ma
 
 A project is a DAG of immutable calculation snapshots. Each task carries its config, input/output/checkpoint filenames, dependencies, an optional checkpoint source, explicit gates, attempt history, and a bounded provenance record. The list is topologically ordered and rejects cycles; a dependent task stays blocked until every prerequisite output passes.
 
+**Node view.** The **Graph** toggle renders the same project on a canvas. Drag a node header to arrange it (positions are saved per task in the project), drag a task's right-hand output port onto another task to add a dependency (self-links, duplicates, and cycles are rejected), and click a line to inspect or remove it. The block library snapshots the current job with a preset job type and, when a task is selected, places the new step after it. The inspector shows the same gates as the list view; **Validate graph** checks structure only and never claims a run passed. **Expand** hides the molecule and parameter panels for a wider canvas; the panels return when another output tab is opened. Checkpoint hand-offs are shown as dashed green edges but are still created in the list editor. Conditional TRUE/FALSE branches are not modelled: there is one edge type, and readiness is decided by gates.
+
 **Checkpoint semantics.** Tasks using `Geom=AllCheck`, `Geom=Checkpoint` (and the legacy `Geom=Check` spelling), `Geom=Step=N`, or `Guess=Read` must depend directly on a task with a checkpoint. `AllCheck` inputs omit the title, charge, and geometry; `Checkpoint` inputs keep charge/multiplicity but omit coordinates. Generated inputs carry `%OldChk` (the upstream checkpoint) plus a distinct `%Chk`.
 
 **Continuation intent.** The task editor's *This job → Continues from an earlier step* sets `Geom=Checkpoint Guess=Read` or `Geom=AllCheck` and refuses to create a task without a valid checkpoint source. `Geom=Step=N` retrieves an intermediate optimisation geometry, so it carries the same binding requirement.
@@ -226,7 +228,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module/data-flow map an
 - **Node studio** — a freeform directed graph with typed ports, checkpoint hand-offs, and a condition block whose TRUE/FALSE edges gate downstream work.
 - **Guided runbook** — an ordered protocol with nested branches, a readiness/next-action inspector, and explicit external-handoff steps.
 
-Open either `index.html` directly in a browser: no build step, no external dependency, no Gaussian execution. [`sketches/README.md`](sketches/README.md) compares the two and recommends the node-studio direction while borrowing the runbook's next-action and blocked-reason panels. Both concepts assume **conditional branches** that the current project model does not implement — today a task is simply blocked until its gates pass — so adopting either needs a model decision before UI work.
+Open either `index.html` directly in a browser: no build step, no external dependency, no Gaussian execution. [`sketches/README.md`](sketches/README.md) compares the two and recommends the node-studio direction while borrowing the runbook's next-action and blocked-reason panels. The node-studio direction is now partially realised by the Workbench **Graph** view; both sketches assume **conditional branches** that the current project model does not implement — today a task is simply blocked until its gates pass — so the branch syntax remains a design decision, not shipped behaviour.
 
 ---
 

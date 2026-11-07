@@ -6,6 +6,7 @@
 import './styles/index.css';
 import './styles/layout.css';
 import './styles/components.css';
+import './styles/workflow-graph.css';
 
 import { MoleculeInput } from './components/MoleculeInput.js';
 import { ParameterPanel } from './components/ParameterPanel.js';

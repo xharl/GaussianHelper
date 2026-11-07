@@ -4,6 +4,9 @@ import { evaluateWorkflowOutput } from '../utils/workflowGates.js';
 import { buildWorkflowBundle } from '../utils/bundleExport.js';
 import { buildTaskInputText, buildTaskProvenanceRecord } from '../utils/workflowInput.js';
 import { PROVENANCE_SUFFIX, createCompactProvenance, stringifyProvenanceRecord } from '../utils/provenance.js';
+import { STATUS_LABELS } from '../utils/workflowLabels.js';
+import { clampGraphPosition, connectionIssue, resolveGraphPositions, GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH } from '../utils/workflowGraph.js';
+import { GRAPH_BLOCKS, renderGraphView, updateEdgeGeometry } from './WorkflowGraph.js';
 import { escapeHtml } from './GaussianOutputInspector.js';
 import {
   createWorkflowProject,
@@ -20,16 +23,6 @@ import {
   validateWorkflowProject,
 } from '../utils/workflowModel.js';
 
-const STATUS_LABELS = {
-  blocked: 'Blocked',
-  ready: 'Ready',
-  'awaiting-output': 'Awaiting output',
-  passed: 'Passed',
-  failed: 'Failed',
-  incomplete: 'Incomplete',
-  'needs-review': 'Needs review',
-};
-
 const CONTINUATION_ROUTES = {
   checkpoint: 'Geom=Checkpoint Guess=Read',
   allcheck: 'Geom=AllCheck',
@@ -44,10 +37,16 @@ export class WorkflowWorkbench {
     this.pendingOutputs = [];
     this.processingOutputs = false;
     this.statusMessage = 'Add a calculation to start a project. Outputs are checked locally in this browser.';
+    this.view = 'list';
+    this.graphZoom = 1;
+    this.graphFocus = false;
+    this.selectedTaskId = null;
+    this.selectedEdge = null;
     this.render();
   }
 
   render() {
+    this.applyGraphFocus();
     const states = deriveTaskStates(this.project);
     const counts = Object.values(states).reduce((result, state) => {
       result[state] = (result[state] || 0) + 1;
@@ -65,6 +64,12 @@ export class WorkflowWorkbench {
               <input id="workflow-project-name" class="form-input workflow-project-name" maxlength="200" value="${escapeHtml(this.project.name)}" />
             </div>
             <div class="workflow-actions">
+              <div class="workflow-view-toggle" role="group" aria-label="Workbench view">
+                <button type="button" id="workflow-view-list" class="workflow-view-btn ${this.view === 'list' ? 'is-active' : ''}"
+                  aria-pressed="${this.view === 'list'}">List</button>
+                <button type="button" id="workflow-view-graph" class="workflow-view-btn ${this.view === 'graph' ? 'is-active' : ''}"
+                  aria-pressed="${this.view === 'graph'}">Graph</button>
+              </div>
               <button type="button" id="workflow-export-bundle" class="btn btn-secondary btn-sm"
                 title="Download every task input, manifest.json, and scheduler templates as a .zip"
                 ${this.project.tasks.length ? '' : 'disabled'}>Export bundle (.zip)</button>
@@ -84,7 +89,7 @@ export class WorkflowWorkbench {
               <input id="workflow-output-input" type="file" accept=".log,.out" multiple hidden ${this.processingOutputs ? 'disabled' : ''} />
             </label>
             ${this.renderPendingOutputs()}
-            ${this.project.tasks.length ? `
+            ${this.view === 'list' && this.project.tasks.length ? `
               <div class="workflow-add-options">
                 <label class="workflow-field"><span>This job</span>
                   <select id="workflow-new-intent" class="form-input">
@@ -105,7 +110,7 @@ export class WorkflowWorkbench {
                 </label>
               </div>
             ` : ''}
-            ${this.getActiveEnsemble ? `
+            ${this.view === 'list' && this.getActiveEnsemble ? `
               <div class="workflow-conformer-queue">
                 <label class="workflow-field"><span>Queue retained conformers (1–10)</span>
                   <input id="workflow-conformer-count" class="form-input" type="number" min="1" max="10" step="1" value="3" />
@@ -117,7 +122,7 @@ export class WorkflowWorkbench {
           </div>
         </section>
 
-        ${this.project.tasks.length ? `
+        ${this.view === 'graph' ? this.renderGraphSection(states) : (this.project.tasks.length ? `
           <div class="workflow-progress" aria-label="Project progress">
             ${[['passed', 'Passed'], ['ready', 'Ready'], ['blocked', 'Blocked'], ['awaiting-output', 'Awaiting output'], ['failed', 'Failed'], ['incomplete', 'Incomplete'], ['needs-review', 'Needs review']]
               .map(([key, label]) => `<div class="workflow-progress-item"><strong>${counts[key] || 0}</strong><span>${label}</span></div>`).join('')}
@@ -125,10 +130,27 @@ export class WorkflowWorkbench {
           <section class="workflow-task-list" aria-label="Calculation tasks">
             ${topologicallySortTasks(this.project.tasks).map(task => this.renderTask(task, states)).join('')}
           </section>
-        ` : '<section class="card workflow-empty"><div class="card-body"><strong>No calculation steps yet.</strong><p>Add the active job to create the first step.</p></div></section>'}
+        ` : '<section class="card workflow-empty"><div class="card-body"><strong>No calculation steps yet.</strong><p>Add the active job to create the first step.</p></div></section>')}
       </div>
     `;
     this.bindEvents();
+  }
+
+  applyGraphFocus() {
+    if (typeof document === 'undefined') return;
+    const app = this.container.closest?.('#app') || document.getElementById?.('app');
+    app?.classList.toggle('workflow-graph-focus', this.view === 'graph' && this.graphFocus);
+  }
+
+  renderGraphSection(states) {
+    return renderGraphView({
+      project: this.project,
+      states,
+      zoom: this.graphZoom,
+      selectedTaskId: this.selectedTaskId,
+      selectedEdge: this.selectedEdge,
+      focus: this.graphFocus,
+    });
   }
 
   bindEvents() {
@@ -207,6 +229,45 @@ export class WorkflowWorkbench {
         this.updateGate(input.dataset.taskId, 'minImaginaryMagnitude', value);
       });
     });
+    this.container.querySelector('#workflow-view-list')?.addEventListener('click', () => this.setView('list'));
+    this.container.querySelector('#workflow-view-graph')?.addEventListener('click', () => this.setView('graph'));
+
+    this.container.querySelectorAll('[data-graph-add]').forEach(button => {
+      button.addEventListener('click', () => this.addBlockTask(button.dataset.graphAdd));
+    });
+    this.container.querySelectorAll('[data-graph-task]').forEach(node => {
+      node.addEventListener('click', event => {
+        if (event.target.closest?.('[data-graph-port-out]')) return;
+        if (this._suppressNodeClick) {
+          this._suppressNodeClick = false;
+          return;
+        }
+        this.selectGraphTask(node.dataset.graphTask);
+      });
+      node.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        this.selectGraphTask(node.dataset.graphTask);
+      });
+    });
+    this.container.querySelectorAll('[data-graph-drag]').forEach(header => {
+      header.addEventListener('pointerdown', event => this.beginNodeDrag(event, header.dataset.graphDrag));
+    });
+    this.container.querySelectorAll('[data-graph-port-out]').forEach(port => {
+      port.addEventListener('pointerdown', event => this.beginConnectionDrag(event, port.dataset.graphPortOut));
+    });
+    this.container.querySelectorAll('path[data-graph-edge-from]').forEach(path => {
+      path.addEventListener('click', () => this.selectGraphEdge(path.dataset.graphEdgeFrom, path.dataset.graphEdgeTo));
+    });
+    this.container.querySelectorAll('[data-graph-action]').forEach(button => {
+      button.addEventListener('click', () => this.handleGraphAction(button));
+    });
+    this.container.querySelectorAll('[data-graph-zoom]').forEach(button => {
+      button.addEventListener('click', () => this.zoomGraph(button.dataset.graphZoom));
+    });
+    const viewport = this.container.querySelector('[data-graph-viewport]');
+    viewport?.addEventListener('pointerdown', event => this.beginCanvasPan(event, viewport));
+
     this.container.querySelectorAll('[data-workflow-assign-output]').forEach(button => {
       button.addEventListener('click', () => {
         const id = button.dataset.workflowAssignOutput;
@@ -553,6 +614,301 @@ export class WorkflowWorkbench {
     return true;
   }
 
+  setView(view) {
+    if (view !== 'list' && view !== 'graph') return false;
+    this.view = view;
+    this.statusMessage = view === 'graph'
+      ? 'Graph view: drag headers to arrange, drag a right-hand port onto another task to add a dependency, click a line to inspect it.'
+      : 'List view: every field and gate remains editable per task.';
+    this.render();
+    return true;
+  }
+
+  selectGraphTask(taskId) {
+    const task = this.project.tasks.find(candidate => candidate.id === taskId);
+    if (!task) return false;
+    this.selectedTaskId = taskId;
+    this.selectedEdge = null;
+    this.preserveGraphScroll(() => this.render());
+    return true;
+  }
+
+  selectGraphEdge(fromId, toId) {
+    if (!this.project.tasks.some(task => task.id === fromId) || !this.project.tasks.some(task => task.id === toId)) {
+      return false;
+    }
+    this.selectedEdge = { from: fromId, to: toId };
+    this.selectedTaskId = null;
+    this.preserveGraphScroll(() => this.render());
+    return true;
+  }
+
+  preserveGraphScroll(callback) {
+    const viewport = this.container.querySelector?.('[data-graph-viewport]');
+    const scroll = viewport ? { left: viewport.scrollLeft, top: viewport.scrollTop } : null;
+    callback();
+    const next = this.container.querySelector?.('[data-graph-viewport]');
+    if (scroll && next) {
+      next.scrollLeft = scroll.left;
+      next.scrollTop = scroll.top;
+    }
+  }
+
+  zoomGraph(direction) {
+    const next = direction === 'reset'
+      ? 1
+      : this.graphZoom + (direction === 'in' ? 0.1 : -0.1);
+    this.graphZoom = Math.min(1.5, Math.max(0.5, Math.round(next * 10) / 10));
+    this.render();
+    return this.graphZoom;
+  }
+
+  addBlockTask(kind) {
+    try {
+      const block = GRAPH_BLOCKS.find(item => item.kind === kind);
+      if (!block) throw new Error('Unknown computational block.');
+      let config = this.getActiveConfig?.();
+      if (!config) throw new Error('The current job has no valid Gaussian input configuration.');
+      config = cloneJson(config);
+      config.route = { ...config.route, jobType: block.jobType };
+      if (block.pop) config.route.pop = block.pop;
+      config.link0 ||= {};
+      delete config.link0.oldCheckpoint;
+      const base = safeBaseName(config.link0.checkpoint || config.title || 'calculation');
+      const baseName = this.findAvailableBase(base);
+      config.link0.checkpoint = `${baseName}.chk`;
+      const titleBase = String(config.title || 'Calculation').split(' · ')[0].trim() || 'Calculation';
+      const selected = this.project.tasks.find(task => task.id === this.selectedTaskId) || null;
+      const task = createWorkflowTask(config, {
+        title: `${titleBase} · ${block.label}`,
+        inputName: `${baseName}.gjf`,
+        outputName: `${baseName}.log`,
+        dependencies: selected ? [selected.id] : [],
+      });
+      if (selected) {
+        const positions = resolveGraphPositions(this.project.tasks);
+        const position = positions[selected.id];
+        if (position) {
+          task.graph = clampGraphPosition({ x: position.x + GRAPH_NODE_WIDTH + 104, y: position.y + 40 });
+        }
+      }
+      const candidate = { ...this.project, tasks: [...this.project.tasks, task] };
+      const validation = validateWorkflowProject(candidate);
+      if (!validation.valid) throw new Error(validation.errors[0]);
+      this.project = candidate;
+      this.project.updatedAt = new Date().toISOString();
+      this.selectedTaskId = task.id;
+      this.selectedEdge = null;
+      this.statusMessage = selected
+        ? `Added ${task.title}; it depends on ${selected.title}. Import its output to unlock dependents.`
+        : `Added ${task.title}. Connect it or edit it in the list view.`;
+      this.render();
+      return task;
+    } catch (error) {
+      this.statusMessage = error instanceof Error ? error.message : String(error);
+      this.render();
+      return null;
+    }
+  }
+
+  /**
+   * Persist a dragged node position. Layout is not a calculation input, so this
+   * must never invalidate attempts or downstream results.
+   */
+  moveTaskNode(taskId, x, y) {
+    const task = this.project.tasks.find(candidate => candidate.id === taskId);
+    if (!task) return false;
+    const graph = clampGraphPosition({ x, y });
+    this.project = {
+      ...this.project,
+      tasks: this.project.tasks.map(candidate => candidate.id === taskId ? { ...candidate, graph } : candidate),
+      updatedAt: new Date().toISOString(),
+    };
+    this.statusMessage = `Moved ${task.title}.`;
+    this.render();
+    return true;
+  }
+
+  connectGraphTasks(fromId, toId) {
+    const issue = connectionIssue(this.project.tasks, fromId, toId);
+    if (issue) {
+      this.statusMessage = issue;
+      this.render();
+      return false;
+    }
+    const target = this.project.tasks.find(task => task.id === toId);
+    return this.setTaskDependencies(toId, [...target.dependencies, fromId]);
+  }
+
+  disconnectGraphEdge(fromId, toId) {
+    const target = this.project.tasks.find(task => task.id === toId);
+    if (!target) return false;
+    const dependencies = target.dependencies.filter(id => id !== fromId);
+    const checkpoint = target.checkpointFromTaskId === fromId ? null : undefined;
+    this.selectedEdge = null;
+    return this.setTaskDependencies(toId, dependencies, checkpoint);
+  }
+
+  clearCheckpointHandoff(fromId, toId) {
+    const target = this.project.tasks.find(task => task.id === toId);
+    if (!target || target.checkpointFromTaskId !== fromId) return false;
+    return this.setTaskDependencies(toId, target.dependencies, null);
+  }
+
+  validateGraph() {
+    const validation = validateWorkflowProject(this.project);
+    const dependencies = this.project.tasks.reduce((sum, task) => sum + task.dependencies.length, 0);
+    this.statusMessage = validation.valid
+      ? `Graph valid: ${this.project.tasks.length} task(s), ${dependencies} dependency edge(s), no cycles. This is structural validation; run gates need imported Gaussian output.`
+      : `Graph has ${validation.errors.length} issue(s): ${validation.errors[0]}`;
+    this.render();
+    return validation.valid;
+  }
+
+  handleGraphAction(button) {
+    const { graphAction: action } = button.dataset;
+    if (action === 'validate') return this.validateGraph();
+    if (action === 'toggle-focus') {
+      this.graphFocus = !this.graphFocus;
+      this.render();
+      return this.graphFocus;
+    }
+    if (action === 'clear-selection') {
+      this.selectedTaskId = null;
+      this.selectedEdge = null;
+      this.render();
+      return true;
+    }
+    if (action === 'edit-list') {
+      const taskId = button.dataset.taskId || null;
+      this.selectedTaskId = taskId;
+      this.setView('list');
+      if (taskId) {
+        setTimeout(() => {
+          this.container.querySelector?.(`[data-task-id="${cssEscape(taskId)}"]`)
+            ?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+        }, 0);
+      }
+      return true;
+    }
+    if (action === 'export') return this.downloadTask(button.dataset.taskId);
+    if (action === 'delete') return this.removeTask(button.dataset.taskId);
+    if (action === 'remove-edge') return this.disconnectGraphEdge(button.dataset.edgeFrom, button.dataset.edgeTo);
+    if (action === 'clear-checkpoint') return this.clearCheckpointHandoff(button.dataset.edgeFrom, button.dataset.edgeTo);
+    return false;
+  }
+
+  beginNodeDrag(event, taskId) {
+    if (typeof document === 'undefined' || event.button !== 0) return;
+    const node = event.target.closest?.('[data-graph-task]');
+    const stage = this.container.querySelector('[data-graph-stage]');
+    const task = this.project.tasks.find(candidate => candidate.id === taskId);
+    if (!node || !stage || !task) return;
+    event.preventDefault();
+
+    const zoom = this.graphZoom || 1;
+    const positions = resolveGraphPositions(this.project.tasks);
+    const origin = { ...positions[taskId] };
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let moved = false;
+
+    const onMove = moveEvent => {
+      const dx = (moveEvent.clientX - startX) / zoom;
+      const dy = (moveEvent.clientY - startY) / zoom;
+      if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+      moved = true;
+      positions[taskId] = {
+        x: Math.max(0, origin.x + dx),
+        y: Math.max(0, origin.y + dy),
+      };
+      node.style.left = `${positions[taskId].x}px`;
+      node.style.top = `${positions[taskId].y}px`;
+      updateEdgeGeometry(stage, positions);
+    };
+    const finish = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', finish);
+      document.removeEventListener('pointercancel', finish);
+      if (!moved) return;
+      this._suppressNodeClick = true;
+      setTimeout(() => { this._suppressNodeClick = false; }, 0);
+      this.moveTaskNode(taskId, positions[taskId].x, positions[taskId].y);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', finish);
+    document.addEventListener('pointercancel', finish);
+  }
+
+  beginConnectionDrag(event, fromId) {
+    if (typeof document === 'undefined' || event.button !== 0) return;
+    const stage = this.container.querySelector('[data-graph-stage]');
+    const svg = this.container.querySelector('.wf-graph-edges');
+    const from = resolveGraphPositions(this.project.tasks)[fromId];
+    if (!stage || !svg || !from) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const zoom = this.graphZoom || 1;
+    const stageRect = stage.getBoundingClientRect();
+    const start = { x: from.x + GRAPH_NODE_WIDTH, y: from.y + GRAPH_NODE_HEIGHT / 2 };
+    const preview = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    preview.setAttribute('class', 'wf-edge is-preview');
+    svg.appendChild(preview);
+
+    const pointAt = moveEvent => ({
+      x: (moveEvent.clientX - stageRect.left) / zoom,
+      y: (moveEvent.clientY - stageRect.top) / zoom,
+    });
+    const draw = moveEvent => {
+      const point = pointAt(moveEvent);
+      const reach = Math.max(40, Math.abs(point.x - start.x) * 0.5);
+      preview.setAttribute('d',
+        `M ${start.x} ${start.y} C ${start.x + reach} ${start.y}, ${point.x - reach} ${point.y}, ${point.x} ${point.y}`);
+    };
+    draw(event);
+
+    const onMove = moveEvent => draw(moveEvent);
+    const finish = upEvent => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', finish);
+      document.removeEventListener('pointercancel', finish);
+      preview.remove();
+      const target = document.elementFromPoint?.(upEvent.clientX, upEvent.clientY)?.closest?.('[data-graph-task]');
+      if (!target) {
+        this.statusMessage = 'Connection cancelled: drop on a task to add a dependency.';
+        this.render();
+        return;
+      }
+      this.connectGraphTasks(fromId, target.dataset.graphTask);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', finish);
+    document.addEventListener('pointercancel', finish);
+  }
+
+  beginCanvasPan(event, viewport) {
+    if (typeof document === 'undefined' || event.button !== 0) return;
+    if (event.target.closest?.('[data-graph-task], path[data-graph-edge-from], [data-graph-port-out]')) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const left = viewport.scrollLeft;
+    const top = viewport.scrollTop;
+    const onMove = moveEvent => {
+      viewport.scrollLeft = left - (moveEvent.clientX - startX);
+      viewport.scrollTop = top - (moveEvent.clientY - startY);
+    };
+    const finish = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', finish);
+      document.removeEventListener('pointercancel', finish);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', finish);
+    document.addEventListener('pointercancel', finish);
+  }
+
   applyRelationshipEdits(taskId) {
     const dependencySelect = this.container.querySelector(`[data-task-dependencies="${cssEscape(taskId)}"]`);
     const checkpointSelect = this.container.querySelector(`[data-task-checkpoint="${cssEscape(taskId)}"]`);
@@ -663,6 +1019,7 @@ export class WorkflowWorkbench {
       dependencies: [...source.dependencies],
       checkpointFromTaskId: source.checkpointFromTaskId,
       gates: { ...source.gates },
+      ...(source.graph ? { graph: clampGraphPosition({ x: source.graph.x + 32, y: source.graph.y + 32 }) } : {}),
     });
     const candidate = { ...this.project, tasks: [...this.project.tasks, task] };
     const validation = validateWorkflowProject(candidate);
@@ -686,6 +1043,10 @@ export class WorkflowWorkbench {
       tasks: this.project.tasks.filter(task => !removed.has(task.id)),
       updatedAt: new Date().toISOString(),
     };
+    if (removed.has(this.selectedTaskId)) this.selectedTaskId = null;
+    if (this.selectedEdge && (removed.has(this.selectedEdge.from) || removed.has(this.selectedEdge.to))) {
+      this.selectedEdge = null;
+    }
     this.statusMessage = `Removed ${removed.size} task(s).`;
     this.render();
     return true;
