@@ -639,8 +639,12 @@ export class WorkflowWorkbench {
     if (view !== 'list' && view !== 'graph') return false;
     this.view = view;
     // The Workbench lives in the third app column; give the canvas the width it
-    // needs on first entry, but respect a user who explicitly collapsed it.
-    if (view === 'graph' && !this._graphFocusChosen) this.graphFocus = true;
+    // needs on first entry, but respect a user who explicitly collapsed it and
+    // keep the molecule/parameter panels visible when there is no valid job yet
+    // (the user needs them to load a structure for the first block).
+    if (view === 'graph' && !this._graphFocusChosen) {
+      this.graphFocus = this.project.tasks.length > 0 || Boolean(this.getActiveConfig?.());
+    }
     this.statusMessage = view === 'graph'
       ? 'Graph view: drag headers to arrange, drag a right-hand port onto another task to add a dependency, click a line to inspect it.'
       : 'List view: every field and gate remains editable per task.';
@@ -1130,7 +1134,14 @@ export class WorkflowWorkbench {
       dependencies: [...source.dependencies],
       checkpointFromTaskId: source.checkpointFromTaskId,
       gates: { ...source.gates },
-      ...(source.graph ? { graph: clampGraphPosition({ x: source.graph.x + 32, y: source.graph.y + 32 }) } : {}),
+      ...(source.graph
+        ? {
+          graph: findFreeGraphPosition(
+            resolveGraphPositions(this.project.tasks),
+            { x: source.graph.x + GRAPH_NODE_WIDTH + 40, y: source.graph.y + 40 },
+          ),
+        }
+        : {}),
     });
     const candidate = { ...this.project, tasks: [...this.project.tasks, task] };
     const validation = validateWorkflowProject(candidate);
@@ -1140,6 +1151,8 @@ export class WorkflowWorkbench {
       return null;
     }
     this.project = candidate;
+    this.selectedTaskId = task.id;
+    this.selectedEdge = null;
     this.statusMessage = `Duplicated ${source.title}.`;
     this.render();
     if (this.view === 'graph') this.scrollTaskIntoView(task.id);

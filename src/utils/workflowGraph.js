@@ -276,8 +276,7 @@ export function connectionIssue(tasks, fromId, toId) {
 export function gateSummary(task) {
   const gates = task?.gates || {};
   const parts = [];
-  const jobType = String(task?.route?.jobType || '').trim();
-  if (jobType) parts.push(jobType);
+  if (gates.requireScfRecord) parts.push('SCF');
   if (gates.requireThermochemistry) parts.push('thermo');
   if (gates.requireFinalEnergy) parts.push('final E');
   if (Number.isInteger(gates.expectedImaginaryModes)) {
@@ -288,5 +287,5 @@ export function gateSummary(task) {
       parts.push(`≥${gates.minImaginaryMagnitude} cm⁻¹`);
     }
   }
-  return parts.join(' · ');
+  return parts.join(' · ') || 'standard gates';
 }

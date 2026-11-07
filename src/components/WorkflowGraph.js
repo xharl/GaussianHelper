@@ -313,7 +313,7 @@ export function renderGraphView({ project, states, zoom, selectedTaskId, selecte
   )).join('');
 
   const emptyHint = tasks.length === 0
-    ? '<div class="wf-graph-empty"><strong>No calculation steps yet.</strong><p>Pick a block on the left to snapshot the current job as the first node.</p></div>'
+    ? '<div class="wf-graph-empty"><strong>No calculation steps yet.</strong><p>Pick a block on the left to snapshot the current job as the first node. If the current job has no structure yet, collapse the canvas and load one in the Molecule panel.</p></div>'
     : '';
 
   return `

@@ -94,7 +94,7 @@ Gate evaluation returns one of three results: `pass`, `fail`, `unknown`. Any req
 ## Build and packaging
 
 - `npm run dev` — Vite dev server.
-- `npm test` — Vitest, 26 files / 413 tests, no browser required.
+- `npm test` — Vitest, 26 files / 415 tests, no browser required.
 - `npm run build` — `vite build` into `dist/`, then `scripts/build-dist.js` creates `dist.zip` and `dist.tar.gz` locally.
 - `vite.config.js` defines the app commit (`__APP_COMMIT__`) for provenance and aliases OpenChemLib's `resources.json` so MMFF94 tables are bundled for offline use.
 - Build outputs are gitignored; release bundles are attached to GitHub Releases.

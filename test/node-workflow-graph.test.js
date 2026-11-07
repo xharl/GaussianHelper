@@ -109,10 +109,12 @@ describe('workflow graph geometry', () => {
       route: { jobType: 'Freq' },
       gates: { expectedImaginaryModes: 1, minImaginaryMagnitude: 50 },
     });
+    const standard = gateSummary({ route: { jobType: 'Opt' }, gates: {} });
     expect(minimum).toContain('0 imag');
     expect(minimum).not.toContain('≥50');
     expect(saddle).toContain('1 imag');
     expect(saddle).toContain('≥50 cm⁻¹');
+    expect(standard).toBe('standard gates');
   });
 });
 
@@ -312,6 +314,24 @@ describe('Workbench node view', () => {
     const zoom = workbench.zoomGraph('fit');
     expect(zoom).toBeGreaterThanOrEqual(0.5);
     expect(zoom).toBeLessThanOrEqual(1);
+  });
+
+  it('duplicates a task into a free slot and selects the copy', () => {
+    const workbench = new WorkflowWorkbench(makeContainer(), () => config());
+    const first = workbench.addCurrentTask();
+    workbench.moveTaskNode(first.id, 400, 300);
+    const copy = workbench.duplicateTask(first.id);
+    expect(copy).not.toBeNull();
+    expect(copy.graph).toBeDefined();
+    expect(graphNodesOverlap(copy.graph, { x: 400, y: 300 })).toBe(false);
+    expect(workbench.selectedTaskId).toBe(copy.id);
+  });
+
+  it('does not auto-expand when there is no valid job to add', () => {
+    const workbench = new WorkflowWorkbench(makeContainer(), () => null);
+    workbench.setView('graph');
+    expect(workbench.graphFocus).toBe(false);
+    expect(workbench.project.tasks.length).toBe(0);
   });
 
   it('zooms within bounds', () => {
