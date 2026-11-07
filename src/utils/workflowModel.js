@@ -12,6 +12,7 @@ import {
 } from '../parsers/gaussianLogParser.js';
 import { normalizeConformerMetadata, validateConformerMetadata } from './conformerMetadata.js';
 import { normalizeCompactProvenance, validateCompactProvenance } from './provenance.js';
+import { clampGraphPosition, isGraphPosition, GRAPH_POSITION_LIMIT } from './workflowGraph.js';
 
 export const WORKFLOW_SCHEMA_VERSION = 1;
 export const MAX_WORKFLOW_TASKS = 100;
@@ -95,9 +96,15 @@ export function createWorkflowTask(config, options = {}) {
   }
   const routeText = `${snapshot.route.jobType || ''} ${snapshot.route.custom || ''}`;
   const title = String(options.title ?? snapshot.title ?? 'Gaussian calculation').trim() || 'Gaussian calculation';
+  let graph;
+  if (options.graph !== undefined && options.graph !== null) {
+    if (!isGraphPosition(options.graph)) throw new TypeError('Workflow task graph position is invalid.');
+    graph = clampGraphPosition(options.graph);
+  }
   return {
     id: options.id || createWorkflowId('task'),
     title,
+    ...(graph ? { graph } : {}),
     config: snapshot,
     inputName: options.inputName || 'calculation.gjf',
     outputName: options.outputName || 'calculation.log',
@@ -231,6 +238,12 @@ export function validateWorkflowProject(project) {
       for (const message of validateCompactProvenance(task.provenance)) {
         errors.push(`Task "${task.id || '?'}" provenance: ${message}.`);
       }
+    }
+    // Graph coordinates are presentation only, but they must be bounded
+    // numbers: a hand-edited project must not be able to place a node at
+    // Infinity or turn the canvas into a terabyte-sized surface.
+    if (task.graph !== undefined && task.graph !== null && !isGraphPosition(task.graph)) {
+      errors.push(`Task "${task.id || '?'}" graph position must be finite coordinates within ±${GRAPH_POSITION_LIMIT}.`);
     }
     if (!Array.isArray(task.dependencies)) {
       errors.push(`Task "${task.id || '?'}" dependencies must be an array.`);
@@ -696,6 +709,7 @@ function sanitizeWorkflowProject(project) {
       },
       activeAttemptId: task.activeAttemptId || null,
       lastExportedAt: task.lastExportedAt || null,
+      ...(isGraphPosition(task.graph) ? { graph: clampGraphPosition(task.graph) } : {}),
       provenance: task.provenance ? normalizeCompactProvenance(task.provenance) : null,
       attempts: task.attempts.map(attempt => ({
         id: attempt.id,

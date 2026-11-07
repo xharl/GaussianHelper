@@ -2,6 +2,13 @@
 
 All notable changes to GaussianHelper. The project uses pre-release versions while the file format and gate set are still evolving.
 
+## Unreleased
+
+### Workflow view
+
+- **Node view** — a graph canvas over the existing DAG: topological auto-layout with per-task saved positions and collision-free auto-placement, drag-to-connect dependencies (self-links, duplicates, and cycles rejected, with drop-target feedback), edge/task inspection, quick edits (title, imaginary-mode gates), checkpoint hand-offs created or cleared from an edge, block-library presets that snapshot the active job, in-canvas log import, zoom/fit, and an expanded-by-default canvas. Gate evaluation, exports, and project persistence are unchanged. Conditional TRUE/FALSE branches remain unmodelled; readiness is still decided by gates.
+- Fixed the header version label to `v0.3-alpha`.
+
 ## v0.3-alpha — 2026-11-07
 
 This release turns the app from a form that emits text into a workbench that checks its own output. It closes the 18 tracked issues for v0.3 and adds the documentation set (`README`, `docs/ARCHITECTURE.md`, `docs/VALIDATION.md`).

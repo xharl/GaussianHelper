@@ -439,3 +439,28 @@
     transparent
   );
 }
+
+/* ── Compact Header (phone width) ───────────────────────────── */
+@media (max-width: 600px) {
+  .app-header {
+    padding: 0 12px;
+  }
+
+  .logo-text {
+    display: none;
+  }
+
+  .header-right {
+    gap: 4px;
+  }
+
+  .header-right .btn {
+    padding: 4px 8px;
+    font-size: var(--text-xs);
+  }
+
+  .header-right .btn svg {
+    width: 14px;
+    height: 14px;
+  }
+}
