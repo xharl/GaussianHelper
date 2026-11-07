@@ -46,12 +46,13 @@ export function createWorkflowTask(config, options = {}) {
     dependencies: [...(options.dependencies || [])],
     checkpointFromTaskId: options.checkpointFromTaskId || null,
     gates: {
-      requireNormalTermination: true,
       requireScfRecord: false,
       requireOptimizationComplete: /(?:^|\s)Opt(?:\b|=)/i.test(routeText),
       requireFrequencyRecord: /(?:^|\s)Freq(?:\b|=)/i.test(routeText),
       expectedImaginaryModes: null,
       ...options.gates,
+      // Always required; not user-configurable in v1. Declared after the spread so a
+      // caller-supplied `false` cannot weaken the gate (validateWorkflowProject enforces this too).
       requireNormalTermination: true,
     },
     activeAttemptId: null,
