@@ -1,9 +1,37 @@
 /**
  * Gaussian basis sets organized by family.
- * Each basis set: { keyword, name, description, category, size, elements, popular }
+ * Each basis set: { keyword, name, description, category, size, elements, popular,
+ *                   ecpIncluded, ecpName, coverage, coverageNote }
  *   - size: 1 (minimal) to 5 (very large)
- *   - elements: 'all' for full periodic table coverage, 'heavy' for ECP sets
+ *   - elements: legacy UI hint only ('all' or 'heavy'); `coverage` is authoritative
+ *
+ * ECP and element-coverage metadata below is transcribed from Gaussian 16's own
+ * documentation — never inferred:
+ *   - https://gaussian.com/basissets/ — basis-set definitions and the
+ *     "range of applicability" table that `coverage` encodes.
+ *   - https://gaussian.com/pseudo/ — ECP availability. SDD is all-electron
+ *     through Ar and uses Stuttgart/Dresden ECPs on the remainder; Stuttgart
+ *     ECPs are not available for Fr (87), Ra (88) or Z >= 105.
+ *   - https://gaussian.com/gen/ — the def2/QZV ECP potential names, and the
+ *     rule that a GenECP ECP block may reference an internally stored basis
+ *     keyword instead of raw ECP parameters.
+ *
+ * `coverage` is a list of inclusive atomic-number ranges, or `null` when the
+ * documentation does not state coverage in a form we can encode. Consumers must
+ * treat `null` as "unknown", never as "covered".
+ *
+ * `ecpIncluded: true` means the single keyword already carries the ECP for the
+ * elements that need one: `#P B3LYP/SDD` on Pd needs no `Pseudo=Read` and no
+ * appended ECP block. `ecpName` is the keyword to place in a GenECP ECP block
+ * (the documented simplified ECP input format) and is null when the basis has
+ * no ECP.
  */
+
+export const BASIS_DOC_SOURCES = Object.freeze({
+  basisSets: 'https://gaussian.com/basissets/',
+  pseudo: 'https://gaussian.com/pseudo/',
+  gen: 'https://gaussian.com/gen/',
+});
 
 export const basisSets = [
   // ─── Pople Basis Sets ───────────────────────────────────────────────
@@ -15,6 +43,12 @@ export const basisSets = [
     size: 1,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    // Gaussian's applicability table does not list STO-3G, so its range is
+    // deliberately not asserted here.
+    coverage: null,
+    coverageNote: 'Not listed in the Gaussian 16 applicability table — coverage unknown',
   },
   {
     keyword: '3-21G',
@@ -24,6 +58,10 @@ export const basisSets = [
     size: 2,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 54]],
+    coverageNote: 'H–Xe',
   },
   {
     keyword: '6-31G',
@@ -33,6 +71,10 @@ export const basisSets = [
     size: 2,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-31G(d)',
@@ -42,6 +84,10 @@ export const basisSets = [
     size: 2,
     elements: 'all',
     popular: true,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-31G(d,p)',
@@ -51,6 +97,10 @@ export const basisSets = [
     size: 2,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-31+G(d)',
@@ -60,6 +110,10 @@ export const basisSets = [
     size: 3,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-31+G(d,p)',
@@ -69,6 +123,10 @@ export const basisSets = [
     size: 3,
     elements: 'all',
     popular: true,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-31++G(d,p)',
@@ -78,6 +136,10 @@ export const basisSets = [
     size: 3,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-311G(d,p)',
@@ -87,6 +149,10 @@ export const basisSets = [
     size: 3,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-311+G(d,p)',
@@ -96,6 +162,10 @@ export const basisSets = [
     size: 3,
     elements: 'all',
     popular: true,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-311+G(2d,p)',
@@ -105,6 +175,10 @@ export const basisSets = [
     size: 4,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-311++G(d,p)',
@@ -114,6 +188,10 @@ export const basisSets = [
     size: 4,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-311++G(2df,2pd)',
@@ -123,6 +201,10 @@ export const basisSets = [
     size: 5,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
   {
     keyword: '6-311++G(3df,3pd)',
@@ -132,6 +214,10 @@ export const basisSets = [
     size: 5,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 36]],
+    coverageNote: 'H–Kr',
   },
 
   // ─── Dunning Correlation-Consistent Sets ────────────────────────────
@@ -143,6 +229,10 @@ export const basisSets = [
     size: 2,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 18], [20, 36]],
+    coverageNote: 'H–Ar, Ca–Kr',
   },
   {
     keyword: 'cc-pVTZ',
@@ -152,6 +242,10 @@ export const basisSets = [
     size: 3,
     elements: 'all',
     popular: true,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 18], [20, 36]],
+    coverageNote: 'H–Ar, Ca–Kr',
   },
   {
     keyword: 'cc-pVQZ',
@@ -161,6 +255,10 @@ export const basisSets = [
     size: 4,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 18], [20, 36]],
+    coverageNote: 'H–Ar, Ca–Kr',
   },
   {
     keyword: 'cc-pV5Z',
@@ -170,6 +268,10 @@ export const basisSets = [
     size: 5,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 18], [20, 36]],
+    coverageNote: 'H–Ar, Ca–Kr',
   },
   {
     keyword: 'aug-cc-pVDZ',
@@ -179,6 +281,10 @@ export const basisSets = [
     size: 3,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 18], [20, 36]],
+    coverageNote: 'H–Ar, Ca–Kr',
   },
   {
     keyword: 'aug-cc-pVTZ',
@@ -188,6 +294,10 @@ export const basisSets = [
     size: 4,
     elements: 'all',
     popular: true,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 18], [20, 36]],
+    coverageNote: 'H–Ar, Ca–Kr',
   },
   {
     keyword: 'aug-cc-pVQZ',
@@ -197,6 +307,10 @@ export const basisSets = [
     size: 5,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 18], [20, 36]],
+    coverageNote: 'H–Ar, Ca–Kr',
   },
   {
     keyword: 'aug-cc-pV5Z',
@@ -206,6 +320,10 @@ export const basisSets = [
     size: 5,
     elements: 'all',
     popular: false,
+    ecpIncluded: false,
+    ecpName: null,
+    coverage: [[1, 18], [20, 36]],
+    coverageNote: 'H–Ar, Ca–Kr',
   },
 
   // ─── Karlsruhe Basis Sets ───────────────────────────────────────────
@@ -213,6 +331,11 @@ export const basisSets = [
   // Def2TZVPP, Def2QZVP, Def2QZVPP) — the hyphen is only part of the published
   // basis-set names. `keyword` is what reaches the route section, so it must
   // stay route-safe; `name` keeps the familiar hyphenated spelling for display.
+  //
+  // The def2 family uses the def2 ECPs on the heavy elements. gaussian.com/gen
+  // documents the ECP potential name explicitly: "The ECP potential name def2
+  // or the synonym QZV can be used in GenECP input to request the potentials
+  // which are used with both the def2 and QZV basis sets."
   {
     keyword: 'def2SVP',
     name: 'def2-SVP',
@@ -221,6 +344,10 @@ export const basisSets = [
     size: 2,
     elements: 'all',
     popular: false,
+    ecpIncluded: true,
+    ecpName: 'def2',
+    coverage: [[1, 57], [72, 86]],
+    coverageNote: 'H–La, Hf–Rn',
   },
   {
     keyword: 'def2TZVP',
@@ -230,6 +357,10 @@ export const basisSets = [
     size: 3,
     elements: 'all',
     popular: true,
+    ecpIncluded: true,
+    ecpName: 'def2',
+    coverage: [[1, 57], [72, 86]],
+    coverageNote: 'H–La, Hf–Rn',
   },
   {
     keyword: 'def2TZVPP',
@@ -239,6 +370,10 @@ export const basisSets = [
     size: 3,
     elements: 'all',
     popular: false,
+    ecpIncluded: true,
+    ecpName: 'def2',
+    coverage: [[1, 57], [72, 86]],
+    coverageNote: 'H–La, Hf–Rn',
   },
   {
     keyword: 'def2QZVP',
@@ -248,6 +383,10 @@ export const basisSets = [
     size: 4,
     elements: 'all',
     popular: false,
+    ecpIncluded: true,
+    ecpName: 'def2',
+    coverage: [[1, 57], [72, 86]],
+    coverageNote: 'H–La, Hf–Rn',
   },
   {
     keyword: 'def2QZVPP',
@@ -257,9 +396,17 @@ export const basisSets = [
     size: 5,
     elements: 'all',
     popular: false,
+    ecpIncluded: true,
+    ecpName: 'def2',
+    coverage: [[1, 57], [72, 86]],
+    coverageNote: 'H–La, Hf–Rn',
   },
 
   // ─── Effective Core Potential (ECP) Sets ─────────────────────────────
+  // These keywords are self-contained: Gaussian already knows which atoms get
+  // an ECP, so the route section alone is enough (no Pseudo=Read, no extra
+  // block). The metadata here describes that behaviour; it does not ask the
+  // generator to add anything to the input.
   {
     keyword: 'LanL2DZ',
     name: 'LanL2DZ',
@@ -268,6 +415,11 @@ export const basisSets = [
     size: 2,
     elements: 'heavy',
     popular: true,
+    ecpIncluded: true,
+    ecpName: 'LanL2DZ',
+    // D95V on the first row; Los Alamos ECP + DZ on Na–La and Hf–Bi.
+    coverage: [[1, 1], [3, 57], [72, 83]],
+    coverageNote: 'H, Li–La, Hf–Bi',
   },
   {
     keyword: 'LanL2MB',
@@ -277,6 +429,11 @@ export const basisSets = [
     size: 1,
     elements: 'heavy',
     popular: false,
+    ecpIncluded: true,
+    ecpName: 'LanL2MB',
+    // STO-3G on the first row; Los Alamos ECP + MBS on Na–La and Hf–Bi.
+    coverage: [[1, 57], [72, 83]],
+    coverageNote: 'H–La, Hf–Bi',
   },
   {
     keyword: 'SDD',
@@ -286,6 +443,12 @@ export const basisSets = [
     size: 2,
     elements: 'heavy',
     popular: true,
+    ecpIncluded: true,
+    ecpName: 'SDD',
+    // All-electron D95 through Ar, Stuttgart/Dresden ECPs thereafter.
+    // Stuttgart ECPs do not exist for Fr (87), Ra (88) or Z >= 105.
+    coverage: [[1, 86]],
+    coverageNote: 'All elements through Rn except Fr and Ra (Z >= 105 also unavailable)',
   },
   {
     keyword: 'SDDAll',
@@ -295,6 +458,13 @@ export const basisSets = [
     size: 2,
     elements: 'heavy',
     popular: false,
+    ecpIncluded: true,
+    // SDDAll selects the Stuttgart potentials for Z > 2; for a heavy atom the
+    // potential is the same one SDD uses, and `SDD` is the documented keyword
+    // for GenECP ECP blocks.
+    ecpName: 'SDD',
+    coverage: [[1, 86]],
+    coverageNote: 'All elements through Rn except Fr and Ra (Z >= 105 also unavailable)',
   },
   {
     keyword: 'CEP-31G',
@@ -304,6 +474,10 @@ export const basisSets = [
     size: 2,
     elements: 'heavy',
     popular: false,
+    ecpIncluded: true,
+    ecpName: 'CEP-31G',
+    coverage: [[1, 86]],
+    coverageNote: 'H–Rn',
   },
   {
     keyword: 'CEP-121G',
@@ -313,6 +487,10 @@ export const basisSets = [
     size: 3,
     elements: 'heavy',
     popular: false,
+    ecpIncluded: true,
+    ecpName: 'CEP-121G',
+    coverage: [[1, 86]],
+    coverageNote: 'H–Rn',
   },
 ];
 

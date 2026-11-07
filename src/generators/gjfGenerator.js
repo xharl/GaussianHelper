@@ -6,6 +6,8 @@
  */
 
 import { methodIncludesDispersion } from '../data/methods.js';
+import { basisSets } from '../data/basisSets.js';
+import { getBasisEntry } from '../utils/basisCoverage.js';
 
 /**
  * Semi-empirical methods that do not take an external basis set.
@@ -28,6 +30,219 @@ function validateCheckpointName(value) {
   }
   return value.trim();
 }
+
+/**
+ * A single element symbol: one uppercase letter, optionally one lowercase
+ * letter (H, C, Pd). Symbols outside the app's H–Xe table are accepted here so
+ * heavier elements can still be described; coverage checks report those as
+ * unknown rather than guessing.
+ */
+const ELEMENT_SYMBOL = /^[A-Z][a-z]?$/;
+
+/**
+ * Characters allowed in a basis/ECP keyword that is written into an input
+ * block or a route token. Mirrors the route-token guard used for basis sets.
+ */
+const BASIS_TOKEN = /^[A-Za-z0-9()+*,\-]+$/;
+
+/**
+ * Whether the route requests the explicit mixed-basis mode.
+ *
+ * GenECP is equivalent to `Gen Pseudo=Read` (gaussian.com/gen). It is used when
+ * different elements need different basis sets and/or an ECP block, e.g.
+ * 6-31G(d) on C/O plus LanL2DZ on Pd. The single-keyword ECP bases (SDD,
+ * LanL2DZ, CEP-31G) do NOT need this mode: they already carry their ECP.
+ *
+ * @param {Object} route
+ * @returns {boolean}
+ */
+function isGenECPMode(route) {
+  return String(route?.basisMode || '').trim().toLowerCase() === 'genecp';
+}
+
+/**
+ * Normalise a list of element symbols from a GenECP assignment.
+ *
+ * @param {string[]|string} elements - Array of symbols, or a whitespace/comma
+ *   separated string.
+ * @param {string} context - Label used in error messages.
+ * @returns {string[]} Canonical symbols, de-duplicated, in input order.
+ */
+function normalizeElementList(elements, context) {
+  const raw = Array.isArray(elements)
+    ? elements
+    : (typeof elements === 'string' ? elements.split(/[\s,]+/) : null);
+
+  if (!raw || raw.length === 0) {
+    throw new Error(`${context} must list at least one element symbol.`);
+  }
+
+  const symbols = [];
+  for (const value of raw) {
+    const rawSymbol = String(value ?? '').trim();
+    const canonical = rawSymbol.charAt(0).toUpperCase() + rawSymbol.slice(1).toLowerCase();
+    if (!ELEMENT_SYMBOL.test(canonical)) {
+      throw new Error(`${context}: "${value}" is not a valid element symbol.`);
+    }
+    if (!symbols.includes(canonical)) symbols.push(canonical);
+  }
+  return symbols;
+}
+
+/**
+ * Find the canonical documented ECP name matching a user-supplied keyword
+ * (case-insensitive). Returns null when the name is not an ECP supplied by a
+ * basis set this app knows about.
+ *
+ * @param {string} name
+ * @returns {string|null}
+ */
+function findDocumentedEcpName(name) {
+  const upper = String(name || '').trim().toUpperCase();
+  if (!upper) return null;
+  for (const entry of basisSets) {
+    if (entry.ecpIncluded && entry.ecpName && entry.ecpName.toUpperCase() === upper) {
+      return entry.ecpName;
+    }
+  }
+  return null;
+}
+
+/**
+ * Validate a GenECP route configuration and produce the ordered basis and ECP
+ * blocks. All checks are structural/documentary: no parameters are invented,
+ * and an unknown or mismatched ECP assignment is rejected rather than guessed.
+ *
+ * @param {Object} route - Route configuration with `elementBasis` and optional `ecp`.
+ * @returns {{basisBlocks: Array<{elements: string[], basis: string}>,
+ *            ecpBlocks: Array<{elements: string[], ecp: string}>}}
+ * @throws {Error} If an assignment is missing, duplicated, orphaned or unknown.
+ */
+function prepareGenECPBlocks(route) {
+  const elementBasis = Array.isArray(route?.elementBasis) ? route.elementBasis : null;
+  if (!elementBasis || elementBasis.length === 0) {
+    throw new Error('GenECP requires route.elementBasis with at least one { elements, basis } assignment.');
+  }
+
+  /** @type {Map<string, string>} */
+  const assigned = new Map();
+  const basisBlocks = [];
+
+  for (let index = 0; index < elementBasis.length; index += 1) {
+    const assignment = elementBasis[index];
+    const elements = normalizeElementList(assignment?.elements, `elementBasis[${index}]`);
+    const basis = String(assignment?.basis ?? '').trim();
+
+    if (!basis || !BASIS_TOKEN.test(basis)) {
+      throw new Error(
+        `elementBasis[${index}] has an invalid basis keyword "${assignment?.basis}".`
+      );
+    }
+
+    for (const element of elements) {
+      if (assigned.has(element)) {
+        throw new Error(
+          `Element ${element} is assigned more than one basis set in route.elementBasis; ` +
+          'GenECP needs exactly one basis per element type.'
+        );
+      }
+      assigned.set(element, basis);
+    }
+    basisBlocks.push({ elements, basis });
+  }
+
+  if (route.ecp !== undefined && route.ecp !== null && !Array.isArray(route.ecp)) {
+    throw new Error('route.ecp must be an array of { elements, ecp } assignments.');
+  }
+  const ecpAssignments = Array.isArray(route.ecp) ? route.ecp : [];
+
+  // Refuse to silently emit a basis-only GenECP input when a selected basis
+  // stores an ECP: that is the "runs without the ECP they intended" failure.
+  // An explicit `ecp: []` is honoured as a deliberate "no ECPs" choice.
+  if (route.ecp === undefined && basisBlocks.some((block) => getBasisEntry(block.basis)?.ecpIncluded)) {
+    throw new Error(
+      'GenECP was given an ECP-bearing basis but no route.ecp assignment. ' +
+      'Add the documented ECP explicitly (for example { elements: [\'Pd\'], ecp: \'LanL2DZ\' }), ' +
+      'or pass ecp: [] if no ECP is intended.'
+    );
+  }
+
+  const ecpBlocks = [];
+  const ecpAssigned = new Set();
+
+  for (let index = 0; index < ecpAssignments.length; index += 1) {
+    const assignment = ecpAssignments[index];
+    const elements = normalizeElementList(assignment?.elements, `ecp[${index}]`);
+    const requested = String(assignment?.ecp ?? '').trim();
+    const documented = findDocumentedEcpName(requested);
+
+    if (!documented) {
+      throw new Error(
+        `ecp[${index}] requests "${assignment?.ecp}", which is not a Gaussian basis keyword ` +
+        'with a stored ECP. Use a documented ECP keyword (for example SDD, LanL2DZ or CEP-31G) ' +
+        'instead of raw ECP parameters.'
+      );
+    }
+
+    for (const element of elements) {
+      if (!assigned.has(element)) {
+        throw new Error(
+          `ecp[${index}] assigns an ECP to ${element}, but ${element} has no route.elementBasis entry.`
+        );
+      }
+      if (ecpAssigned.has(element)) {
+        throw new Error(
+          `Element ${element} has more than one ECP assignment; GenECP needs exactly one ECP per element type.`
+        );
+      }
+
+      const elementBasisName = assigned.get(element);
+      const expected = getBasisEntry(elementBasisName)?.ecpName;
+      if (!expected) {
+        throw new Error(
+          `ecp[${index}] assigns an ECP to ${element}, but ${elementBasisName} has no documented ECP.`
+        );
+      }
+      if (expected.toUpperCase() !== documented.toUpperCase()) {
+        throw new Error(
+          `ECP "${requested}" does not belong to basis ${elementBasisName}; use ${expected}.`
+        );
+      }
+      ecpAssigned.add(element);
+    }
+
+    ecpBlocks.push({ elements, ecp: documented });
+  }
+
+  return { basisBlocks, ecpBlocks };
+}
+
+/**
+ * Build the basis and ECP input blocks for a GenECP route.
+ *
+ * Layout follows Gaussian's documented simplified input format
+ * (https://gaussian.com/pseudo/ and https://gaussian.com/gen/): each centre
+ * definition block is `elements 0` / a standard basis keyword / `****`, and the
+ * ECP section follows after a blank line as `elements 0` / an ECP keyword.
+ *
+ * @param {Object} route
+ * @returns {{basisLines: string[], ecpLines: string[]}}
+ */
+export function buildGenECPBlocks(route) {
+  const { basisBlocks, ecpBlocks } = prepareGenECPBlocks(route);
+  const basisLines = [];
+  const ecpLines = [];
+
+  for (const block of basisBlocks) {
+    basisLines.push(`${block.elements.join(' ')} 0`, block.basis, '****');
+  }
+  for (const block of ecpBlocks) {
+    ecpLines.push(`${block.elements.join(' ')} 0`, block.ecp);
+  }
+
+  return { basisLines, ecpLines };
+}
+
 
 /**
  * Format a floating-point coordinate value to 6 decimal places,
@@ -68,6 +283,14 @@ export function formatCoordinate(value) {
  * @param {string} [route.solvation=''] - Solvation model keyword (e.g. 'SCRF=(SMD,Solvent=Water)').
  * @param {string} [route.pop=''] - Population analysis keyword.
  * @param {string} [route.custom=''] - Any additional custom keywords.
+ * @param {'GenECP'} [route.basisMode] - Explicit mixed-basis mode. Emits
+ *   `Method/GenECP` and requires `route.elementBasis`; see {@link buildGenECPBlocks}.
+ * @param {Array<{elements: string[], basis: string}>} [route.elementBasis] -
+ *   Per-element basis assignments for GenECP (e.g.
+ *   `[{ elements: ['C','O'], basis: '6-31G(d)' }, { elements: ['Pd'], basis: 'LanL2DZ' }]`).
+ * @param {Array<{elements: string[], ecp: string}>} [route.ecp] - Optional ECP
+ *   assignments for GenECP. The ECP must be the documented ECP of the basis
+ *   assigned to those elements; raw ECP parameters are not supported.
  * @returns {string} The complete route line (single line, no trailing newline).
  */
 export function buildRouteSection(route) {
@@ -94,8 +317,37 @@ export function buildRouteSection(route) {
   const needsBasis = !NO_BASIS_METHODS.has(upperMethod);
   const basisSet = (route.basisSet || '').trim();
 
+  // Explicit mixed-basis mode: `Method/GenECP` plus basis and ECP blocks after
+  // the geometry. GenECP is Gaussian's documented equivalent of
+  // `Gen Pseudo=Read`, not something to add alongside a self-contained ECP
+  // basis such as SDD.
+  const basisMode = String(route.basisMode || '').trim();
+  const genecp = isGenECPMode(route);
+  if (basisMode && !genecp) {
+    throw new Error(
+      `Unknown basis mode "${route.basisMode}". The only supported value is 'GenECP'.`
+    );
+  }
+  if (genecp) {
+    if (!needsBasis) {
+      throw new Error(`Method ${method} does not take a basis set; GenECP is not applicable.`);
+    }
+    if (basisSet) {
+      throw new Error(
+        'GenECP assigns basis sets per element; remove route.basisSet and use route.elementBasis.'
+      );
+    }
+    if (!Array.isArray(route.elementBasis) || route.elementBasis.length === 0) {
+      throw new Error(
+        'GenECP requires route.elementBasis with at least one { elements, basis } assignment.'
+      );
+    }
+  }
+
   let methodPart;
-  if (needsBasis && basisSet) {
+  if (needsBasis && genecp) {
+    methodPart = `${method}/GenECP`;
+  } else if (needsBasis && basisSet) {
     methodPart = `${method}/${basisSet}`;
   } else {
     methodPart = method;
@@ -195,9 +447,19 @@ export function generateGJF(config) {
   const routeLine = buildRouteSection(config.route);
   sections.push(routeLine);
 
+  // Explicit mixed-basis/ECP mode. Built up-front so an invalid assignment
+  // fails before any partial output and before the Geom=AllCheck shortcut.
+  const genecp = isGenECPMode(config.route);
+  const genecpBlocks = genecp ? buildGenECPBlocks(config.route) : null;
+
   // Geom=AllCheck reuses the title, charge, multiplicity, and geometry from the checkpoint.
   sections.push('');
   if (routeHasGeometrySource(config.route, 'AllCheck')) {
+    if (genecp) {
+      throw new Error(
+        'GenECP cannot be combined with Geom=AllCheck: the basis and ECP sections must follow an explicit geometry.'
+      );
+    }
     sections.push('');
     return sections.join('\n');
   }
@@ -231,6 +493,19 @@ export function generateGJF(config) {
     }
   }
 
+
+  // ── Explicit GenECP basis and ECP sections ──
+  // Gaussian reads these after the molecule specification: basis centre blocks
+  // (each terminated by `****`), a blank line, then ECP centre blocks (the
+  // section is terminated by a blank line).
+  if (genecp) {
+    sections.push(''); // terminates the geometry
+    for (const line of genecpBlocks.basisLines) sections.push(line);
+    sections.push(''); // terminates the basis section
+    for (const line of genecpBlocks.ecpLines) sections.push(line);
+    if (genecpBlocks.ecpLines.length > 0) sections.push(''); // terminates the ECP section
+    return sections.join('\n');
+  }
 
   // ── Trailing blank line (required by Gaussian) ──
   sections.push('');
