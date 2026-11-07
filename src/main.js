@@ -99,8 +99,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Update parameter panel (e.g. heavy atom check)
     parameterPanel.updateForAtoms(molState.atoms);
 
-    // 2. Update 3D viewer
+    // 2. Update 3D viewer (and say which conformer is on screen)
     viewer3d.updateMolecule(molState.atoms, molState.molfile);
+    viewer3d.setEnsembleBadge(molState.conformer || null);
 
     // 3. Update GJF preview
     const paramsState = parameterPanel.getState();
@@ -126,10 +127,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   });
   new GaussianOutputInspector(inspectorContainer);
-  new WorkflowWorkbench(workflowContainer, () => gjfPreview.buildConfig(
-    parameterPanel.getState(),
-    moleculeInput.getState(),
-  ));
+  new WorkflowWorkbench(workflowContainer, () => {
+    const molecule = moleculeInput.getState();
+    const config = gjfPreview.buildConfig(parameterPanel.getState(), molecule);
+    // Provenance only: generateGJF ignores this field, so the .gjf text is
+    // byte-identical whether or not a conformer was chosen.
+    if (molecule.conformer) config.conformer = molecule.conformer;
+    return config;
+  }, () => moleculeInput.getEnsemble());
 
   // Pre-load default simple molecule (Water) on startup
   const smilesInput = document.getElementById('smiles-input');

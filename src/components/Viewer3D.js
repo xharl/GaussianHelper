@@ -17,6 +17,7 @@ export class Viewer3D {
   render() {
     this.container.innerHTML = `
       <div class="viewer-wrapper">
+        <div class="viewer-ensemble-badge hidden" id="viewer-ensemble-badge"></div>
         <div class="viewer-container" id="viewer-3d">
           <div class="viewer-placeholder" id="viewer-placeholder">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.25">
@@ -166,6 +167,26 @@ export class Viewer3D {
     this.applyStyle();
     this.viewer.zoomTo();
     this.viewer.render();
+  }
+
+  /**
+   * Label the viewer with the conformer that is currently displayed.
+   *
+   * @param {import('../utils/conformerMetadata.js').ConformerMetadata|null} conformer
+   */
+  setEnsembleBadge(conformer) {
+    const badge = this.container.querySelector('#viewer-ensemble-badge');
+    if (!badge) return;
+    if (!conformer) {
+      badge.textContent = '';
+      badge.classList.add('hidden');
+      return;
+    }
+    const parts = [`Conformer ${conformer.index + 1}/${conformer.retainedCount}`];
+    if (Number.isFinite(conformer.relativeKcal)) parts.push(`ΔE ${conformer.relativeKcal.toFixed(2)} kcal/mol`);
+    if (Number.isFinite(conformer.population)) parts.push(`${(conformer.population * 100).toFixed(1)}%`);
+    badge.textContent = parts.join(' · ');
+    badge.classList.remove('hidden');
   }
 
   /**

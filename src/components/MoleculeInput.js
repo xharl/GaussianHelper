@@ -3,6 +3,12 @@ import { parseMOL, parseSDF } from '../parsers/molParser.js';
 import { parseXYZ } from '../parsers/xyzParser.js';
 import { processSMILES } from '../parsers/smilesHandler.js';
 import { validateChargeMultiplicity } from '../utils/validation.js';
+import {
+  DEFAULT_CONFORMER_LIMIT,
+  MAX_CONFORMER_LIMIT,
+  generateConformerEnsemble,
+  normalizeConformerLimit,
+} from '../utils/conformerEnsemble.js';
 
 export class MoleculeInput {
   /**
@@ -19,6 +25,10 @@ export class MoleculeInput {
     this.currentSmiles = '';
     this.charge = 0;
     this.multiplicity = 1;
+    this.ensemble = null;
+    this.activeConformerIndex = null;
+    this.ensembleStatus = '';
+    this.baseSource = null;
 
     this.render();
     this.bindEvents();
@@ -117,6 +127,36 @@ export class MoleculeInput {
           <span class="atom-info-text">No molecule loaded</span>
         </div>
       </div>
+
+      <!-- Conformer ensemble -->
+      <div class="section animate-in" style="animation-delay: 0.25s">
+        <div class="section-header">
+          <div class="section-title" style="display: flex; align-items: center; gap: 4px;">
+            <span class="section-icon">🧬</span>
+            Conformer Ensemble
+            <span class="tooltip tooltip-bottom" data-tooltip="Generate several 3D conformers, minimise each with MMFF94, prune duplicates, and rank by Boltzmann population" style="cursor: help; opacity: 0.6; font-size: 11px;">ℹ️</span>
+          </div>
+        </div>
+        <div class="section-content">
+          <p class="conformer-note">
+            Flexible molecules have more than one accessible 3D structure. Ranking an ensemble shows how much the geometry matters
+            before you spend CPU time on one conformer.
+          </p>
+          <div class="conformer-controls">
+            <label class="form-label" for="conformer-count">Conformers</label>
+            <input type="number" id="conformer-count" class="form-input conformer-count-input"
+              min="1" max="${MAX_CONFORMER_LIMIT}" step="1" value="${DEFAULT_CONFORMER_LIMIT}" />
+            <button type="button" id="conformer-generate" class="btn btn-secondary btn-sm">Generate ensemble</button>
+          </div>
+          <div id="conformer-status" class="conformer-status" role="status" aria-live="polite"></div>
+          <div id="conformer-warnings"></div>
+          <div id="conformer-results"></div>
+          <p class="conformer-disclaimer">
+            Tautomers and protonation states are <strong>not</strong> enumerated: OpenChemLib 9.22 exposes no tautomer generator,
+            so the ensemble follows the structure exactly as entered. Set charge and multiplicity above to define the species.
+          </p>
+        </div>
+      </div>
     `;
   }
 
@@ -182,6 +222,17 @@ export class MoleculeInput {
       this.multiplicity = parseInt(multInput.value) || 1;
       this.notifyChange();
     });
+
+    // Conformer ensemble
+    this.container.querySelector('#conformer-generate')?.addEventListener('click', () => this.generateEnsemble());
+    this.container.querySelector('#conformer-count')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') this.generateEnsemble();
+    });
+    this.container.querySelector('#conformer-results')?.addEventListener('change', (event) => {
+      const input = event.target?.closest?.('input[data-conformer-index]');
+      if (!input) return;
+      this.selectConformer(Number(input.dataset.conformerIndex));
+    });
   }
 
   initJSME() {
@@ -220,6 +271,8 @@ export class MoleculeInput {
       this.currentAtoms = result.atoms;
       this.currentMolfile = result.molfile;
       this.currentSmiles = smiles;
+      this.resetEnsemble();
+      this.rememberBaseSource();
 
       // Load into JSME if available
       if (this.jsmeReady && this.jsmeApplet) {
@@ -276,6 +329,8 @@ export class MoleculeInput {
         this.currentAtoms = result.atoms;
         this.currentMolfile = result.molfile || '';
         this.currentSmiles = result.smiles || '';
+        this.resetEnsemble();
+        this.rememberBaseSource();
 
         // Update SMILES input
         if (this.currentSmiles) {
@@ -316,6 +371,203 @@ export class MoleculeInput {
     } catch (err) {
       this.showToast(`Error parsing file: ${err.message}`, 'error');
     }
+  }
+
+  /**
+   * Remember the structure the ensemble is generated from, so regenerating
+   * after picking a conformer does not compound explicit hydrogens.
+   */
+  rememberBaseSource() {
+    if (this.currentSmiles) this.baseSource = { smiles: this.currentSmiles };
+    else if (this.currentMolfile) this.baseSource = { molfile: this.currentMolfile };
+    else this.baseSource = null;
+  }
+
+  /** Drop the current ensemble (new molecule loaded). */
+  resetEnsemble() {
+    this.ensemble = null;
+    this.activeConformerIndex = null;
+    this.ensembleStatus = '';
+    const results = this.container.querySelector('#conformer-results');
+    if (results) results.innerHTML = '';
+    const warnings = this.container.querySelector('#conformer-warnings');
+    if (warnings) warnings.innerHTML = '';
+    this.setEnsembleStatus('');
+  }
+
+  setEnsembleStatus(message, isError = false) {
+    this.ensembleStatus = message;
+    const status = this.container.querySelector('#conformer-status');
+    if (!status) return;
+    status.textContent = message;
+    status.classList.toggle('conformer-status-error', Boolean(isError) && message.length > 0);
+  }
+
+  /**
+   * Generate the ensemble for the loaded molecule and show the ranked table.
+   * OCL work is synchronous, so the "generating" status is painted first.
+   */
+  generateEnsemble() {
+    if (!this.currentAtoms || this.currentAtoms.length === 0) {
+      this.setEnsembleStatus('Load a molecule before generating an ensemble.', true);
+      return;
+    }
+    const countInput = this.container.querySelector('#conformer-count');
+    const requested = normalizeConformerLimit(countInput?.value ?? DEFAULT_CONFORMER_LIMIT);
+    if (countInput) countInput.value = String(requested);
+
+    const source = this.baseSource
+      || (this.currentSmiles ? { smiles: this.currentSmiles } : null)
+      || (this.currentMolfile ? { molfile: this.currentMolfile } : null);
+    if (!source) {
+      this.setEnsembleStatus('No structure is available to generate conformers from.', true);
+      return;
+    }
+
+    this.setEnsembleStatus(`Generating up to ${requested} conformers and minimising each with MMFF94…`);
+    const run = () => {
+      let result;
+      try {
+        result = generateConformerEnsemble(source, { count: requested });
+      } catch (error) {
+        this.ensemble = null;
+        this.activeConformerIndex = null;
+        this.renderEnsemble();
+        this.setEnsembleStatus(`Conformer generation failed: ${error?.message || error}`, true);
+        return;
+      }
+
+      this.ensemble = result;
+      if (result.conformers.length === 0) {
+        this.activeConformerIndex = null;
+        this.renderEnsemble();
+        this.setEnsembleStatus(result.warnings[0] || 'No conformers could be generated.', true);
+        return;
+      }
+
+      // Show the lowest-energy conformer, which is the one the ranking recommends.
+      this.applyConformer(0);
+      this.renderEnsemble();
+      this.setEnsembleStatus(
+        `Retained ${result.retainedCount} of ${result.generatedCount} generated conformer(s); `
+        + `MMFF94 ranking at ${result.temperatureK.toFixed(2)} K. The viewer and .gjf use conformer 1.`,
+      );
+    };
+
+    if (typeof setTimeout === 'function') setTimeout(run, 0);
+    else run();
+  }
+
+  /** Apply a retained conformer's coordinates without re-rendering the table. */
+  applyConformer(index) {
+    if (!this.ensemble || !this.ensemble.conformers[index]) return false;
+    const conformer = this.ensemble.conformers[index];
+    this.activeConformerIndex = index;
+    this.currentAtoms = conformer.atoms;
+    this.currentMolfile = conformer.molfile;
+    this.updateAtomInfo();
+    this.notifyChange();
+    return true;
+  }
+
+  /** Choose a conformer from the table and refresh the dependent views. */
+  selectConformer(index) {
+    if (!this.applyConformer(index)) return false;
+    this.renderEnsemble();
+    return true;
+  }
+
+  /** Render the ranked table and its warnings. */
+  renderEnsemble() {
+    const results = this.container.querySelector('#conformer-results');
+    const warningsHost = this.container.querySelector('#conformer-warnings');
+    if (!results || !warningsHost) return;
+
+    warningsHost.innerHTML = '';
+    for (const warning of this.ensemble?.warnings || []) {
+      const element = document.createElement('div');
+      element.className = 'form-warning conformer-warning';
+      element.textContent = warning;
+      warningsHost.appendChild(element);
+    }
+    for (const note of this.ensemble?.notes || []) {
+      const element = document.createElement('p');
+      element.className = 'conformer-note';
+      element.textContent = note;
+      warningsHost.appendChild(element);
+    }
+
+    if (!this.ensemble || this.ensemble.conformers.length === 0) {
+      results.innerHTML = '';
+      return;
+    }
+
+    const spread = this.ensemble.spreadKcal;
+    const summary = document.createElement('div');
+    summary.className = 'conformer-summary';
+    summary.textContent = `${this.ensemble.retainedCount} retained · `
+      + `${this.ensemble.generatedCount} generated · `
+      + `spread ${Number.isFinite(spread) ? `${spread.toFixed(2)} kcal/mol` : 'unavailable'}`;
+    results.replaceChildren(summary);
+
+    if (this.ensemble.energyAvailable) {
+      const table = document.createElement('table');
+      table.className = 'conformer-table';
+      table.innerHTML = `
+        <thead>
+          <tr><th scope="col">Use</th><th scope="col">#</th><th scope="col">E</th><th scope="col">ΔE</th><th scope="col">Pop.</th><th scope="col">RMSD</th></tr>
+        </thead>
+        <tbody></tbody>
+      `;
+      const body = table.querySelector('tbody');
+      this.ensemble.conformers.forEach((conformer) => {
+        const row = document.createElement('tr');
+        row.className = conformer.index === this.activeConformerIndex ? 'conformer-row-active' : '';
+        row.innerHTML = `
+          <td><input type="radio" name="active-conformer" data-conformer-index="${conformer.index}"
+            ${conformer.index === this.activeConformerIndex ? 'checked' : ''}
+            aria-label="Use conformer ${conformer.index + 1}" /></td>
+          <td>${conformer.index + 1}</td>
+          <td>${formatKcal(conformer.energyKcal)}</td>
+          <td>${formatKcal(conformer.relativeKcal)}</td>
+          <td>${formatPercent(conformer.population)}</td>
+          <td>${conformer.rmsdToLowest.toFixed(2)}</td>
+        `;
+        body.appendChild(row);
+      });
+      results.appendChild(table);
+
+      const legend = document.createElement('p');
+      legend.className = 'conformer-note';
+      legend.textContent = 'E and ΔE in kcal/mol (MMFF94). Pop. is the Boltzmann population at 298.15 K. '
+        + 'RMSD is the heavy-atom RMSD to conformer 1 in Å.';
+      results.appendChild(legend);
+    } else {
+      const element = document.createElement('p');
+      element.className = 'conformer-note';
+      element.textContent = 'Energies are unavailable for this molecule, so no population table is shown. '
+        + 'The geometries are still listed by generation order.';
+      results.appendChild(element);
+      const list = document.createElement('ul');
+      list.className = 'conformer-unranked';
+      this.ensemble.conformers.forEach((conformer) => {
+        const item = document.createElement('li');
+        item.textContent = `Conformer ${conformer.index + 1}: MMFF94 energy unavailable (${conformer.heavyAtomCount} heavy atoms)`;
+        list.appendChild(item);
+      });
+      results.appendChild(list);
+    }
+  }
+
+  /** @returns {Object|null} The active ensemble, for the Workflow Workbench. */
+  getEnsemble() {
+    return this.ensemble;
+  }
+
+  /** @returns {import('../utils/conformerMetadata.js').ConformerMetadata|null} */
+  getConformerMetadata() {
+    if (!this.ensemble || this.activeConformerIndex === null) return null;
+    return this.ensemble.conformers[this.activeConformerIndex]?.metadata ?? null;
   }
 
   /**
@@ -438,7 +690,8 @@ export class MoleculeInput {
         molfile: this.currentMolfile,
         smiles: this.currentSmiles,
         charge: this.charge,
-        multiplicity: this.multiplicity
+        multiplicity: this.multiplicity,
+        conformer: this.getConformerMetadata()
       });
     }
   }
@@ -502,7 +755,18 @@ export class MoleculeInput {
       molfile: this.currentMolfile,
       smiles: this.currentSmiles,
       charge: this.charge,
-      multiplicity: this.multiplicity
+      multiplicity: this.multiplicity,
+      conformer: this.getConformerMetadata()
     };
   }
+}
+
+/** Format a kcal/mol value for the ensemble table. */
+function formatKcal(value) {
+  return Number.isFinite(value) ? value.toFixed(2) : '—';
+}
+
+/** Format a Boltzmann fraction as a percentage. */
+function formatPercent(value) {
+  return Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : '—';
 }

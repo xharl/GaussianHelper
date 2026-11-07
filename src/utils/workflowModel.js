@@ -6,6 +6,7 @@ import {
   MAX_ROUTE_TOKEN_CHARS,
   MAX_ROUTE_TOKENS,
 } from '../parsers/gaussianLogParser.js';
+import { normalizeConformerMetadata, validateConformerMetadata } from './conformerMetadata.js';
 
 export const WORKFLOW_SCHEMA_VERSION = 1;
 export const MAX_WORKFLOW_TASKS = 100;
@@ -41,6 +42,15 @@ export function createWorkflowTask(config, options = {}) {
   }
   const snapshot = cloneJson(config);
   if (snapshot.link0) delete snapshot.link0.oldCheckpoint;
+  // Conformer provenance is optional, but never store an unbounded or
+  // self-inconsistent block: it is the record of which 3D structure was chosen.
+  if (snapshot.conformer !== undefined && snapshot.conformer !== null) {
+    const conformer = normalizeConformerMetadata(snapshot.conformer);
+    if (!conformer) throw new TypeError('Workflow task conformer provenance is invalid.');
+    snapshot.conformer = conformer;
+  } else {
+    delete snapshot.conformer;
+  }
   const routeText = `${snapshot.route.jobType || ''} ${snapshot.route.custom || ''}`;
   const title = String(options.title ?? snapshot.title ?? 'Gaussian calculation').trim() || 'Gaussian calculation';
   return {
@@ -165,6 +175,11 @@ export function validateWorkflowProject(project) {
       const completeness = validateInputCompleteness(task.config);
       for (const message of completeness.errors) errors.push(`Task "${task.id}" input: ${message}`);
       validateGjfConfigText(task, errors);
+      if (task.config.conformer !== undefined && task.config.conformer !== null) {
+        for (const message of validateConformerMetadata(task.config.conformer)) {
+          errors.push(`Task "${task.id}" conformer provenance: ${message}.`);
+        }
+      }
     }
     if (!Array.isArray(task.dependencies)) {
       errors.push(`Task "${task.id || '?'}" dependencies must be an array.`);
@@ -530,6 +545,7 @@ function sanitizeWorkflowProject(project) {
         charge: task.config.charge,
         multiplicity: task.config.multiplicity,
         atoms: task.config.atoms.map(atom => ({ symbol: atom.symbol, x: atom.x, y: atom.y, z: atom.z })),
+        ...(task.config.conformer ? { conformer: normalizeConformerMetadata(task.config.conformer) } : {}),
       },
       inputName: task.inputName,
       outputName: task.outputName,

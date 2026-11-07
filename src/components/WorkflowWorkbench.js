@@ -8,6 +8,7 @@ import {
   createWorkflowTask,
   createWorkflowId,
   MAX_WORKFLOW_PROJECT_BYTES,
+  MAX_WORKFLOW_TASKS,
   deriveTaskStates,
   invalidateTaskAndDescendants,
   parseWorkflowProjectJson,
@@ -27,9 +28,10 @@ const STATUS_LABELS = {
 };
 
 export class WorkflowWorkbench {
-  constructor(container, getActiveConfig) {
+  constructor(container, getActiveConfig, getActiveEnsemble = null) {
     this.container = container;
     this.getActiveConfig = getActiveConfig;
+    this.getActiveEnsemble = getActiveEnsemble;
     this.project = createWorkflowProject();
     this.pendingOutputs = [];
     this.processingOutputs = false;
@@ -88,6 +90,15 @@ export class WorkflowWorkbench {
                 </label>
               </div>
             ` : ''}
+            ${this.getActiveEnsemble ? `
+              <div class="workflow-conformer-queue">
+                <label class="workflow-field"><span>Queue retained conformers (1–10)</span>
+                  <input id="workflow-conformer-count" class="form-input" type="number" min="1" max="10" step="1" value="3" />
+                </label>
+                <button type="button" id="workflow-queue-conformers" class="btn btn-secondary btn-sm">Queue top-k conformers</button>
+                <p class="workflow-bundle-note">Creates one task per retained conformer, all sharing the dependencies selected above. Each task records its conformer energy, population, and ensemble spread; the coordinates of that conformer are written to its input.</p>
+              </div>
+            ` : ''}
           </div>
         </section>
 
@@ -137,6 +148,12 @@ export class WorkflowWorkbench {
       const checkpointSelect = this.container.querySelector('#workflow-new-checkpoint');
       const dependencies = Array.from(dependencySelect?.selectedOptions || []).map(option => option.value);
       this.addCurrentTask({ dependencies, checkpointFromTaskId: checkpointSelect?.value || null });
+    });
+
+    this.container.querySelector('#workflow-queue-conformers')?.addEventListener('click', () => {
+      const input = this.container.querySelector('#workflow-conformer-count');
+      const requested = Number.parseInt(input?.value ?? '3', 10);
+      this.queueConformerTasks(Number.isFinite(requested) ? requested : 3);
     });
 
     this.container.querySelectorAll('[data-workflow-action]').forEach(button => {
@@ -364,6 +381,80 @@ export class WorkflowWorkbench {
       this.statusMessage = error instanceof Error ? error.message : String(error);
       this.render();
       return null;
+    }
+  }
+
+  /**
+   * Queue one task per retained conformer of the active ensemble. All siblings
+   * share the dependencies and checkpoint source currently selected in the
+   * "Add current job" controls, so they sit at the same level of the DAG.
+   *
+   * @param {number} [count=3] - How many of the retained conformers to queue.
+   * @returns {Array<Object>} Created tasks (empty when nothing was added).
+   */
+  queueConformerTasks(count = 3) {
+    try {
+      const ensemble = this.getActiveEnsemble?.();
+      if (!ensemble || !Array.isArray(ensemble.conformers) || ensemble.conformers.length === 0) {
+        throw new Error('Generate a conformer ensemble for the current molecule before queueing conformers.');
+      }
+      const activeConfig = this.getActiveConfig?.();
+      if (!activeConfig) throw new Error('The current job has no valid Gaussian input configuration.');
+
+      const dependencySelect = this.container.querySelector('#workflow-new-dependencies');
+      const checkpointSelect = this.container.querySelector('#workflow-new-checkpoint');
+      const dependencies = Array.from(dependencySelect?.selectedOptions || []).map(option => option.value);
+      const checkpointFromTaskId = checkpointSelect?.value || null;
+
+      const requested = Number.isInteger(count) ? count : 3;
+      const capacity = MAX_WORKFLOW_TASKS - this.project.tasks.length;
+      const limit = Math.max(0, Math.min(10, requested, ensemble.conformers.length, capacity));
+      if (limit === 0) {
+        throw new Error(capacity <= 0
+          ? `A project may contain at most ${MAX_WORKFLOW_TASKS} tasks.`
+          : 'No retained conformers are available to queue.');
+      }
+
+      const tasks = [...this.project.tasks];
+      const created = [];
+      for (let i = 0; i < limit; i += 1) {
+        const conformer = ensemble.conformers[i];
+        const config = cloneJson(activeConfig);
+        config.link0 ||= {};
+        delete config.link0.oldCheckpoint;
+        const base = safeBaseName(config.link0.checkpoint || config.title || 'calculation');
+        const baseName = this.findAvailableBase(`${base}-conf${i + 1}`, tasks);
+        config.link0.checkpoint = `${baseName}.chk`;
+        config.atoms = conformer.atoms.map(atom => ({
+          symbol: atom.symbol,
+          x: atom.x,
+          y: atom.y,
+          z: atom.z,
+        }));
+        config.conformer = conformer.metadata;
+        const title = `${String(config.title || 'Calculation').trim().slice(0, 170) || 'Calculation'} · conformer ${i + 1}`;
+        const task = createWorkflowTask(config, {
+          title,
+          inputName: `${baseName}.gjf`,
+          outputName: `${baseName}.log`,
+          dependencies: [...dependencies],
+          checkpointFromTaskId,
+        });
+        tasks.push(task);
+        created.push(task);
+      }
+
+      const candidate = { ...this.project, tasks, updatedAt: new Date().toISOString() };
+      const validation = validateWorkflowProject(candidate);
+      if (!validation.valid) throw new Error(validation.errors[0]);
+      this.project = candidate;
+      this.statusMessage = `Queued ${created.length} conformer task(s). Each input carries its own geometry; the chosen conformer and ensemble spread are recorded in the task.`;
+      this.render();
+      return created;
+    } catch (error) {
+      this.statusMessage = error instanceof Error ? error.message : String(error);
+      this.render();
+      return [];
     }
   }
 
@@ -690,11 +781,11 @@ export class WorkflowWorkbench {
     return true;
   }
 
-  findAvailableBase(proposed) {
+  findAvailableBase(proposed, tasks = this.project.tasks) {
     const base = safeBaseName(proposed);
-    const usedInputs = new Set(this.project.tasks.map(task => task.inputName.toLowerCase()));
-    const usedOutputs = new Set(this.project.tasks.map(task => task.outputName.toLowerCase()));
-    const usedCheckpoints = new Set(this.project.tasks.map(task => task.config.link0?.checkpoint?.toLowerCase()).filter(Boolean));
+    const usedInputs = new Set(tasks.map(task => task.inputName.toLowerCase()));
+    const usedOutputs = new Set(tasks.map(task => task.outputName.toLowerCase()));
+    const usedCheckpoints = new Set(tasks.map(task => task.config.link0?.checkpoint?.toLowerCase()).filter(Boolean));
     for (let suffix = 1; suffix <= 1000; suffix++) {
       const candidate = suffix === 1 ? base : `${base}-${suffix}`;
       if (!usedInputs.has(`${candidate}.gjf`.toLowerCase())
