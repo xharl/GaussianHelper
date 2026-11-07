@@ -1,167 +1,241 @@
 # GaussianHelper
 
-**Current version: v0.2-alpha**
+**Current version: v0.3-alpha** · [Release notes](CHANGELOG.md) · [Architecture](docs/ARCHITECTURE.md) · [Validation model](docs/VALIDATION.md)
 
-GaussianHelper is a modern, responsive web application designed for computational chemists to prepare Gaussian Job Files (`.gjf`) and construct/manage sequential batch calculation workflows.
+GaussianHelper is a client-side workbench for preparing Gaussian 16 input files (`.gjf`), generating batch and scheduler scripts, and checking the outputs that come back. It is built for computational chemists who would rather see the route section, the geometry, and the evidence behind a pass/fail verdict than trust a black box.
 
-It runs entirely client-side, providing a fast, graphical tool for setting up inputs without any software dependencies. It also supports zero-installation local server launching to bypass CORS security policies.
+Everything runs locally in the browser. There is no backend, no telemetry, no upload, and no autosave: structures, projects, and logs stay on the machine that opened them. The app prepares and validates files; it does **not** run Gaussian.
 
 ![GaussianHelper Screenshot](public/screenshot.png)
 
 ---
 
-## 🌟 Key Features
+## Quick start
 
-- **3D Structure Viewer**: Interactive, premium 3D visualization using ball-and-stick, stick, or spacefill models.
-- **Conformer Ensemble Generator**: Generate up to 50 conformers (10 by default) from a SMILES string or MOL file, minimise each with MMFF94, prune duplicate geometries by heavy-atom RMSD, and rank the survivors by Boltzmann population at 298.15 K. See [Conformer Ensembles](#-conformer-ensembles).
-- **Multi-Format Coordinate Parser**: Import structures from `.xyz` coordinate files, standard `.mol` / `.sdf` structures, or ChemDraw `.cdxml` drawings (extracting atomic positions, scaling coords, and handling implicit hydrogens).
-- **Theory Level Recommendations**: Smart recommendations for method/basis set combinations based on the calculation type (geometry optimization, energy, frequency, etc.) — helps users pick the right level of theory without deep DFT expertise.
-- **理论 & Parameter Setups**: Visual inputs for standard Link 0 commands (memory, processors, checkpoints), job types, method functionalities, basis sets, SCF models, integration grids, dispersion, solvation, and population analyses.
-- **Batch Generator & Queue**: Compile multiple calculation configs in a sequence queue, customize inputs/outputs inline, and export them as:
-  - **Windows Batch Control Files** (`.bcf`) for Gaussian's native queuing.
-  - **Linux Shell Scripts** (`.sh`) for sequential terminal executions (includes start/end timestamp echoes and completion checks).
-- **Gaussian Output Inspector**: Inspect multiple `.log` / `.out` files locally. Summarize termination, SCF energy/convergence, optimization markers, frequencies, thermochemistry (ZPE and H/G totals with temperature/pressure), warnings, and errors with source line evidence; export a batch CSV report.
-- **Workflow Workbench**: Organize calculation snapshots as a dependency graph, link checkpoint files with `%OldChk`, export only ready steps (or a single `--Link1--` chain when requested), export the whole workflow as a `.zip` bundle with a DAG manifest and scheduler templates, import logs for explicit validation gates, and save/load a portable local project file. Every input download also writes a `<input>.provenance.json` sidecar (app version + commit, timestamp, method/basis/dispersion/solvation/grid/SCF, charge/multiplicity, atom count + Hill formula, geometry source, conformer/ensemble, task ids, and the SHA-256 of the `.gjf`).
-- **CORS-Bypassing Portable Launchers**:
-  - `run.bat` for Windows (uses native PowerShell and .NET listener).
-  - `run.sh` for Linux (uses system-native Python 3/2 HTTP server).
+**Portable bundle (no install).** Download `gaussian-helper-bundle-<commit>.zip` (Windows) or `.tar.gz` (Linux) from the [latest release](https://github.com/xharl/GaussianHelper/releases/latest), extract it, and run `run.bat` / `./run.sh`. The bundle is a static build served from a local Python/PowerShell HTTP server so the browser's module and CORS rules are satisfied. Release assets are named with the commit they were built from.
 
----
+**From source.**
 
-## 🛠️ Developer Setup & Commands
-
-To set up the development environment, make sure you have [Node.js](https://nodejs.org) installed on your system.
-
-### 1. Install Dependencies
 ```bash
 npm install
+npm run dev      # Vite dev server
+npm test         # Vitest suite
+npm run build    # static build in dist/ + local dist.zip / dist.tar.gz
 ```
 
-### 2. Run Local Development Server
-Starts a hot-reloading dev server using Vite:
-```bash
-npm run dev
-```
-
-### 3. Run Unit Test Suite
-Runs Vitest headlessly to verify element/formula utilities, validation, GJF generation, coordinate parsers, the output inspector, and workflow planning/validation:
-```bash
-npm test
-```
-
-### 4. Build and Package Production Assets
-Compiles the client-side code and generates portable distribution archives (`dist.zip`, `dist.tar.gz`) locally via our custom postbuild step:
-```bash
-npm run build
-```
-
-These archives are build outputs and are **not committed** to the repository — `dist/`, `dist.zip` and `dist.tar.gz` are gitignored. Prebuilt bundles are published as GitHub Release assets; see [How to Launch the Portable App](#-how-to-launch-the-portable-app-offline--zero-install).
-
-> **Distribution intent:** `package.json` deliberately keeps `"private": true`. GaussianHelper is a browser application, not an npm library, so an accidental `npm publish` is blocked. Distribution happens through GitHub Releases and source builds.
+Node.js is the only prerequisite. The build outputs (`dist/`, `dist.zip`, `dist.tar.gz`) are gitignored; published bundles live on the Releases page.
 
 ---
 
-## 🚀 How to Launch the Portable App (Offline / Zero-Install)
+## What it does
 
-No software installation is required. Download `dist.zip` (Windows) or `dist.tar.gz` (Linux) from the [latest release](https://github.com/xharl/GaussianHelper/releases/latest). Release assets are named with the commit they were built from (for example `gaussian-helper-bundle-<sha>.zip`), so a bundle can always be traced back to its source. To build the bundle yourself instead, run `npm run build` as described above.
+### Build the input
 
-### 💻 Windows
-1. Extract the `dist.zip` archive.
-2. Double-click the `run.bat` script.
-3. This opens `http://localhost:8080` in your default browser. Close the console when done to stop the local server.
+- **Structure input** — draw in the 2D editor, paste SMILES, or import `.xyz`, `.mol`/`.sdf`, and ChemDraw `.cdxml`. Coordinates are parsed strictly: truncated files, unknown elements, and non-finite coordinates are rejected instead of being repaired.
+- **3D and conformers** — one 3D structure is generated immediately; the **Conformer Ensemble** panel can generate, minimise (MMFF94), RMSD-prune, and Boltzmann-rank up to 50 conformers. The chosen conformer is recorded in the task. See [Conformer ensembles](#conformer-ensembles).
+- **Theory & parameters** — method, basis set (including the Karlsruhe `def2*` family and ECP-bearing sets), SCF, integration grid, dispersion, solvation, population analysis, Link 0 memory/processors/checkpoints, job type, and free-text route keywords. See [Heavy elements and GenECP](#heavy-elements-and-genecp).
+- **Multi-fragment systems** — optional per-fragment charge/multiplicity specifications for complexes, counterpoise inputs, and fragment guesses. See [Multi-fragment inputs](#multi-fragment-inputs).
+- **Continuations** — a task can be declared "continues from an earlier step"; the app sets `Geom=Checkpoint Guess=Read` (or `AllCheck`), requires a checkpoint binding, and can export a two-link `--Link1--` input. See [Workflow Workbench](#workflow-workbench).
 
-### 🐧 Linux
-1. Extract `dist.tar.gz` or `dist.zip`.
-2. Open a terminal inside the directory and run:
-   ```bash
-   ./run.sh
-   ```
-3. This spins up Python's built-in server and opens the browser. Hit `Ctrl+C` to terminate the server.
+### Check the theory before running
 
-## 🧬 Conformer Ensembles
+- **Pre-flight chemistry lint** — metadata-driven warnings for missing dispersion, hybrid functionals on minimal/double-zeta Pople bases, `Freq` without thermochemistry settings, `Opt=TS` without a Hessian, `TD` on a non-range-separated functional, transition metals with default SCF, heavy elements without an ECP, and basis sets on methods that do not take one.
+- **Heuristic cost estimate** — an explicitly labelled order-of-magnitude core-hour range from atom count, method rung, basis size, job type, and core count. It is not a benchmark and says so.
+- **Route keyword registry** — every method, basis, job-type, and option token written into the route is checked against a documented Gaussian 16 registry. Unknown tokens are warnings that quote the token; route-unsafe characters are hard errors. See [Route keyword validation](#route-keyword-validation).
 
-Loading a molecule still produces one 3D structure immediately. **Generate ensemble** in the *Conformer Ensemble* panel does the more honest thing: it generates up to the requested number of conformers with OpenChemLib's ETKDG-style generator (10 by default, hard cap 50, deterministic seed), minimises every conformer with **MMFF94**, prunes duplicate geometries by heavy-atom RMSD (0.5 Å), and sorts what remains by energy.
+### Inspect the output
 
-The table shows each retained conformer's MMFF94 energy, its energy relative to the lowest conformer, its Boltzmann population at 298.15 K, and its heavy-atom RMSD to the lowest conformer. Choose a row with the radio button to load that geometry into the 3D viewer and the `.gjf` preview. When the spread across retained conformers exceeds **2 kcal/mol**, the panel warns that the reported value depends on conformer choice — because it does.
+The **Output Inspector** reads multiple `.log`/`.out` files locally and reports, with source line evidence:
 
-The chosen conformer, its energy, its population, and the ensemble spread are recorded in the workflow task configuration (`conformer`), so a `.ghproject.json` file says which geometry produced which input. This block is provenance only: it is validated and bounded, and the generated Gaussian input is byte-identical with or without it. **Queue top-k conformers** in the Workflow Workbench creates one task per retained conformer, all sharing the same dependencies, so alternatives can be computed as siblings in the DAG.
+- normal/error termination and explicit SCF convergence/failure text;
+- the **reference** `SCF Done` energy and, separately, the **method** final energy for post-HF and composite jobs (`E(MP2)`, `CCSD(T)=`, `E(CBS-QB3)`, `G4(0 K)=`, `W1BD=`, …);
+- optimisation and frequency records, including every negative mode and the smallest magnitude;
+- **thermochemistry** for `Freq` jobs: zero-point correction, thermal corrections to E/H/G, the corresponding totals, and the temperature/pressure they were computed at;
+- the **route echo** from the log and the `%Chk` / `%OldChk` filenames, so a stale checkpoint or a different functional is visible;
+- warnings and errors with line references, plus a CSV export of the section-level report.
+
+A pass in the inspector means "the text contains the required evidence", not "the chemistry is right". Missing or unrecognised markers are reported as `unknown` or `incomplete`, never as success.
+
+### Chain jobs and validate each step
+
+The **Workflow Workbench** turns calculation snapshots into a dependency DAG: one `.gjf` per task, topologically ordered, with explicit checkpoint bindings and explicit validation gates. A dependent task stays blocked until every prerequisite's imported output passes. See [Workflow Workbench](#workflow-workbench).
+
+### Batch and bundle
+
+- **Batch Generator** — queue configs and export a Windows `.bcf` batch control file or a Linux `.sh` runner. The shell runner classifies each job by Gaussian's termination markers (`Normal termination`, `Error termination`, neither) rather than the process exit code, because Gaussian exits `0` even on error termination. It is a termination check only, not the Workbench gate set.
+- **Workflow bundle** — export every task's input, a data-only DAG manifest, per-task provenance sidecars, and SLURM/PBS/plain-bash templates in one `.zip`. The scripts are inert templates and do not validate results.
+
+---
+
+## Conformer ensembles
+
+Generating one conformer and calling it "the structure" hides the largest error source in computed energetics. **Generate ensemble** does the more honest thing:
+
+- generates up to the requested number of conformers with OpenChemLib's ETKDG-style generator (10 by default, hard cap 50, deterministic seed);
+- minimises each with **MMFF94** and computes real force-field energies;
+- prunes duplicate geometries by heavy-atom RMSD (0.5 Å);
+- sorts the survivors by energy and reports each conformer's energy, relative energy, Boltzmann population at 298.15 K, and RMSD to the lowest conformer;
+- warns when the retained spread exceeds **2 kcal/mol**, because the reported value then depends on the geometry chosen;
+- records the chosen conformer, its energy/population, and the ensemble spread in the task configuration (provenance only — the generated `.gjf` is byte-identical with or without the metadata).
+
+**Queue top-k conformers** creates sibling tasks, one per retained conformer, sharing the same dependencies.
 
 Limitations, stated plainly:
 
-- **Tautomers and protonation states are not enumerated.** OpenChemLib 9.22 has no tautomer generator (only canonicalisation flags), so the ensemble follows exactly the structure you enter. Charge and multiplicity define the species; a different protomer must be entered as a different structure. This is out of scope for the conformer feature rather than approximated with guessed chemistry.
-- MMFF94 energies are gas-phase force-field energies, not free energies, and the population table ranks a finite stochastic search — it is not a proof that the global minimum was found. If MMFF94 cannot type an atom (for example platinum) or minimisation does not converge, the energy is reported as **unavailable** and no populations are shown; nothing is estimated or filled in.
-- The MMFF94 parameter tables ship inside `openchemlib/dist/resources.json`, which the package does not expose as a subpath. `vite.config.js` aliases that file as `openchemlib-resources` so the portable offline build can rank conformers without a network fetch; this adds roughly 0.5 MB gzipped to the bundle.
+- **Tautomers and protonation states are not enumerated.** OpenChemLib 9.22 has no tautomer generator (only canonicalisation flags). Charge and multiplicity define the species; enter the protomer you want. This is out of scope rather than approximated with guessed chemistry.
+- MMFF94 energies are gas-phase force-field energies, not free energies. The population table ranks a finite stochastic search; it is not proof that the global minimum was found.
+- If MMFF94 cannot type an atom (platinum, for example) or minimisation does not converge, the energy is reported as **unavailable** and populations are withheld. Nothing is estimated.
+- The MMFF94 parameter tables add roughly 0.5 MB gzipped to the portable bundle. `vite.config.js` aliases `openchemlib/dist/resources.json` so the offline build does not fetch them at runtime.
 
-## 🧾 Provenance Manifests
+---
 
-Every exported input is accompanied by `<input>.provenance.json` — a pretty-printed, key-sorted record that says what was run and where it came from:
+## Heavy elements and GenECP
 
-- **Program**: app name, version from `package.json`, and the short git commit injected at build time (`vite.config.js`); a source checkout or tarball without git metadata records `"commit": "unknown"` rather than inventing one.
-- **Generation**: one ISO timestamp. The record contains no other volatile data, so two exports of the same job differ only in `generatedAt`.
-- **Route**: method, basis set (`GenECP` for mixed-basis inputs), job type, dispersion, solvation, grid, SCF, population, and custom keywords, trimmed rather than silently normalised.
-- **Molecule**: charge, multiplicity, atom count, and Hill formula. `Geom=AllCheck` inputs write no molecule specification, so those fields are `null`/`0` there; `Geom=Checkpoint` inputs omit coordinates but keep charge/multiplicity.
-- **Geometry source**: `drawn`, `smiles` (with the SMILES string), `file` (with the filename), `checkpoint`, or `unknown`. The Workbench only knows `checkpoint` when the route reads one; a project file does not record how a structure was entered, so anything else stays `unknown` with a note instead of guessing.
-- **Conformer/ensemble**: index, MMFF94 energy, population, relative energy, and ensemble spread when the task recorded them; `null` otherwise.
-- **Tautomer/protomer**: always `null`, with an explicit note that enumeration is not implemented.
-- **Task identity**: task id and parent task ids.
-- **Input hash**: lowercase SHA-256 of the exact `.gjf` text written beside the sidecar (including `%OldChk` for checkpoint-dependent tasks), so a later edit to the input is detectable.
+The basis list includes `LanL2DZ`, `LanL2MB`, `SDD`, `SDDAll`, `CEP-*`, and the `def2*` family. Two different mechanisms are involved, and the app keeps them distinct:
 
-The Workbench shows the bounded subset (timestamp, app version + commit, geometry source, conformer, input SHA-256) under each task. The compact record is stored per task in `.ghproject.json`, is validated on load, and is cleared when the task's configuration or dependencies change so it cannot describe a stale input. Bundle export writes the full sidecar for every task and lists each filename in `manifest.json`.
+- **Self-contained ECP bases** — `SDD`, `LanL2DZ`, and the `CEP-*` keywords already include the matching effective core potential. `#P B3LYP/SDD` on Pd needs no `Pseudo=Read` and no appended ECP block. Adding one is wrong, so the app does not.
+- **Mixed-basis / explicit ECP** — when different elements need different bases (say `6-31G(d)` on C/O and `LanL2DZ` on Pd), the generator supports an explicit **GenECP** mode: route `Method/GenECP`, per-element basis blocks, and an ECP block in Gaussian's documented *simplified ECP input format* (a block may reference an internally stored basis keyword instead of raw parameters). Raw ECP parameter tables are deliberately **not** shipped: inventing or transcribing them without an authoritative source is not acceptable, and the simplified format does not need them.
 
-The sidecar describes the **input**; imported logs remain separate, bounded attempt evidence in the project file. Merging parsed results into the sidecar is deliberately not done, because the sidecar is written before the calculation runs.
+Basis entries carry documented element coverage and whether an ECP is included. The pre-flight lint warns when a selected basis does not cover an element in the molecule (for example `6-31G(d)` with Pd) and when a heavy element is present without an ECP. Where Gaussian's documentation does not state a range in a machine-readable form, coverage is `unknown`, never guessed.
 
-## 🔬 Gaussian Output Inspector
+---
 
-Open the **Output Inspector** tab and drop or select multiple Gaussian `.log` / `.out` files. Files are read locally in the browser; the app does not upload or persist them. The inspector reports termination markers, SCF energies and explicit convergence text, optimization markers, frequencies (including negative-mode values, and a saddle-threshold verdict when a `minImaginaryMagnitude` is supplied by the caller), the echoed route keywords with their source line, the `%Chk` / `%OldChk` filenames echoed in the log header, and matching warnings/errors with line references. Export the section-level comparison as CSV.
+## Multi-fragment inputs
 
-Statuses are text-derived findings, not proof of scientific correctness. Missing or unrecognized markers remain **unknown** or **incomplete**; absence of a warning is not proof of a successful or valid calculation.
+Gaussian's fragment syntax is one charge/spin line carrying the total pair followed by one pair per fragment, with atom labels carrying `(Fragment=N)`:
 
-## 🧭 Workflow Workbench
+```
+0,1 0,1 0,1
+ O(Fragment=1)      0.000000    0.000000    0.000000
+ H(Fragment=1)      0.490000    0.760000   -0.290000
+ O(Fragment=2)      0.000000    0.000000    2.980000
+```
 
-Open **Workflow Workbench** to snapshot the current Gaussian job as a task. Add prerequisites to form a directed acyclic workflow; the list is topologically ordered and rejects cycles. A downstream task stays blocked until every prerequisite output passes. Tasks using `Geom=AllCheck`, `Geom=Checkpoint`, `Geom=Check`, `Geom=Step=N`, or `Guess=Read` must explicitly depend on a task with a checkpoint; `Geom=AllCheck` inputs omit title/charge/geometry, while `Geom=Checkpoint` (and its legacy `Geom=Check` spelling) inputs retain charge/multiplicity but omit atom coordinates. Generated inputs include `%OldChk` plus a distinct `%Chk`.
+The generator accepts an optional `fragments` array (`{ charge, multiplicity, atomRange: [start, end] }`, inclusive and 0-based); the default single fragment reproduces existing output byte-for-byte. Validation checks that ranges tile the atom list exactly once, that each fragment's charge/multiplicity parity is consistent with its own atoms, and that fragment charges sum to the molecular charge — errors name the fragment index. Single-fragment inputs are unchanged.
 
-The task editor's **This job → Continues from an earlier step** intent sets `Geom=Checkpoint Guess=Read` (or `Geom=AllCheck`, if chosen) on the task route, so a continuation can be created without hand-editing the route field. It refuses to create the task unless a checkpoint source is selected and that source is also a direct dependency. `Geom=Step=N` retrieves an intermediate optimisation geometry from the checkpoint, so it carries the same binding requirement.
+**Current limitation:** there is no fragment editor in the UI yet. The config field, generator, validation, and project persistence are in place; a control that assigns atom ranges is a follow-up. Until then, fragments can be set through the workflow/project API, not through the form.
 
-The Workbench normally chains steps as a **DAG of separate jobs**: one `.gjf` per task, each exported only when its prerequisites have passed, and each run as its own Gaussian invocation. A continuation task also offers **Download with upstream (--Link1--)**. That explicit option writes one `.gjf` containing the upstream step and the continuation step separated by `--Link1--`, for schedulers that submit the chain as a single queued entity. Gaussian's documented multistep layout requires a blank line before `--Link1--`, and Link 0 commands belong to each step, so the file carries a Link 0 block per link: the upstream link names its `%Chk`; the continuation link names `%OldChk` (the upstream checkpoint) and its own distinct `%Chk` ([Gaussian 16 input](https://gaussian.com/input/), [Link 0 commands](https://gaussian.com/link0/)). Prefer the DAG when each step must be inspected, validated, or run on different resources; prefer Link1 when the whole chain should run without a resubmission.
+---
 
-For each ready task, download its `.gjf`, run it outside GaussianHelper, then import the resulting `.log` / `.out`. A unique filename match is assigned automatically only when that task is awaiting output; unmatched files and multi-section logs require an explicit task/section choice. The Workbench checks normal termination, that the log's route echo matches the configured method, basis (including GenECP), job type, dispersion, solvation, grid, SCF and population keywords as a normalised token set, route-required optimization/frequency/thermochemistry evidence (ZPE, H, and G totals), optional SCF evidence, and imaginary-mode validation: an optional expected count plus a minimum magnitude floor (default **50 cm-1**, `null` disables the floor). A missing route echo is `unknown`, never a pass; harmless extras such as `Test` or `MaxDisk` are ignored, while a conflicting method, basis, or job-type keyword fails with the missing/unexpected diff as evidence. The echoed `%Chk` / `%OldChk` filename is reported even when the route matches, so a stale checkpoint run stays visible. Unknown required evidence does not pass and does not unlock dependent work. Failed steps can be retried; changing inputs/dependencies/gates invalidates affected downstream results.
+## Route keyword validation
 
-A `Freq` job that is not a `TS`, `QST2`, or `QST3` saddle search now defaults to expecting **zero** imaginary modes — a minimum with one imaginary mode fails instead of passing silently. A saddle search keeps an unset count so the user states how many imaginary modes it should have, and every stored imaginary mode must then clear `minImaginaryMagnitude`. A −4 cm-1 artefact fails with `-4 cm-1 < 50 cm-1` as evidence; the parsed value closest to zero is the binding mode, and when the parser's 100-value storage cap truncates the list, `minImaginary` (maintained for every parsed mode) still supplies the check. Both gate values are stored in the `.ghproject.json` file and validated on load (finite, 0–10000 cm-1, or `null`). **UI gap:** the Workbench currently exposes only the expected count, not a numeric threshold input. The 50 cm-1 floor therefore applies automatically; changing it requires editing `minImaginaryMagnitude` in the saved project file (or setting it through the workflow API) until a UI control is added.
+`src/data/keywordRegistry.js` is a machine-readable registry of the Gaussian 16 keywords the app writes: methods and bases seeded from the curated lists in `src/data/methods.js` and `src/data/basisSets.js`, plus job types and option families (SCF, grid, dispersion, solvation, population, geometry, guess, Gen/GenECP, symmetry, and so on). A data test fails if a curated keyword is missing from the registry, duplicated, or disagrees with its metadata, so the two cannot drift apart.
 
-The browser does **not** run Gaussian or stop an external batch job. It exports one ready task at a time so the user can validate each result before requesting its dependent input. **Save project** / **Open project** use a versioned `.ghproject.json` file that stores task configurations and bounded parsed evidence, not raw log contents; nothing is uploaded or autosaved.
+`validateRouteTokens()` classifies problems by severity:
 
-**Export bundle** downloads one `<project>.workflow.zip` containing the inputs for **every** task, including blocked or already-exported tasks. This intentionally differs from the single-task download, which offers only a `ready` step so validation stays sequential; exporting a bundle does not mark any task as awaiting output. The archive contains:
+- **Unknown keyword → warning.** The message quotes the offending token (for example `"FOO-2X"`), because Gaussian may accept a functional, `IOp`, or keyword newer than this app's list. Warnings appear in the preview's pre-flight panel and never block generation.
+- **Route-unsafe characters → error.** Whitespace, `/`, `=`, `#`, `%`, or a control character inside a single token cannot be emitted safely.
 
-- every task's `.gjf`, named per its `inputName`, plus `<input>.provenance.json` with the full provenance record for that input;
-- `manifest.json` — data only: schema version, generation timestamp, project name, task ids/titles/dependencies, input/output/provenance/checkpoint filenames, checkpoint sources, configured gates, and the DAG edges. No gate logic is embedded;
-- `submit-slurm.sh` plus one `task-<id>.slurm` per task, and `submit-pbs.sh` plus one `task-<id>.pbs` per task. Both submit scripts capture each job id and chain dependents with `afterok`, so a diamond `A → B, A → C, B + C → D` is submitted as B and C after A, then D after both;
-- `run-all.sh`, a fully commented plain-bash sequence for running the inputs in topological order.
-
-The exported scripts are inert templates: they run Gaussian but **do not validate results** and make no gate claims. After the jobs finish, import the `.log` / `.out` files into the Workflow Workbench; the browser applies the same gates as for a single task.
-
-## 🧾 Route Keyword Validation
-
-Every method, basis-set, calculation-type and option keyword that GaussianHelper writes into the route section is checked against a machine-readable registry of Gaussian 16 keywords in `src/data/keywordRegistry.js`. The method and basis entries are seeded from `src/data/methods.js` and `src/data/basisSets.js`, so the curated lists and the registry cannot drift apart; a data test fails if a listed keyword is missing from the registry, appears twice, or the two disagree.
-
-`validateRouteTokens()` in `src/utils/validation.js` classifies problems by severity:
-
-- **Unknown keyword → warning.** The message quotes the offending token (for example `"FOO-2X"`), because Gaussian may accept a functional, `IOp`, or keyword newer than this app's list. Warnings appear in the preview's pre-flight lint panel and never block generation.
-- **Route-unsafe characters → error.** Whitespace, `/`, `=`, `#`, `%`, or a control character inside a single token (for example a method field containing `B3LYP/def2`) cannot be emitted safely and is always reported as an error.
-
-The free-text **Extra Keywords** field is pasted verbatim, so it is skipped by default. Two advanced switches sit below the preview header, and the same fields can be set on the route object when configuring a job programmatically:
+The free-text **Extra Keywords** field is pasted verbatim, so it is skipped by default. Two advanced switches exist in the preview, and the same fields can be set programmatically:
 
 | Route field | Effect |
 |---|---|
 | `allowUnknownRouteTokens: true` | Suppresses unknown-keyword warnings. It does **not** suppress route-unsafe-character errors. |
 | `strictRouteTokens: true` | Also validates the free-text Extra Keywords field against the registry. |
 
-Only the keyword that owns a parenthesised list is token-checked: `SCF=(Tight,MaxCycle=200)` validates `SCF`. Documented sub-options such as `Tight`, `Solvent=Water`, and `GD3BJ` are recorded in the registry metadata but are not individually rejected, because Gaussian has many legitimate sub-options beyond this app's list.
-
-## 🤖 AI Disclaimer
-* **Note**: This project has been developed with the assistance of agentic artificial intelligence (AI) models. While the application, files parsers, and input generators have been tested, users are advised to verify their generated Gaussian Job Files (`.gjf`) and execution scripts before running calculations on production clusters.
+Only the keyword that owns a parenthesised list is token-checked: `SCF=(Tight,MaxCycle=200)` validates `SCF`. Documented sub-options are recorded in the registry but are not individually rejected, because Gaussian has many legitimate sub-options beyond this app's list.
 
 ---
 
-## 📄 License & Credits
-* **Developer & Credits**: Developed by **xharl**.
-* **License**: Released under the **GNU General Public License v3 (GPLv3)**. See `LICENSE` for details.
+## Workflow Workbench
+
+A project is a DAG of immutable calculation snapshots. Each task carries its config, input/output/checkpoint filenames, dependencies, an optional checkpoint source, explicit gates, attempt history, and a bounded provenance record. The list is topologically ordered and rejects cycles; a dependent task stays blocked until every prerequisite output passes.
+
+**Checkpoint semantics.** Tasks using `Geom=AllCheck`, `Geom=Checkpoint` (and the legacy `Geom=Check` spelling), `Geom=Step=N`, or `Guess=Read` must depend directly on a task with a checkpoint. `AllCheck` inputs omit the title, charge, and geometry; `Checkpoint` inputs keep charge/multiplicity but omit coordinates. Generated inputs carry `%OldChk` (the upstream checkpoint) plus a distinct `%Chk`.
+
+**Continuation intent.** The task editor's *This job → Continues from an earlier step* sets `Geom=Checkpoint Guess=Read` or `Geom=AllCheck` and refuses to create a task without a valid checkpoint source. `Geom=Step=N` retrieves an intermediate optimisation geometry, so it carries the same binding requirement.
+
+**DAG first, Link1 on request.** The normal chain is separate jobs: one `.gjf` per task, exported only when its prerequisites have passed, each run as its own Gaussian invocation. A continuation task also offers **Download with upstream (`--Link1--`)**, which writes one `.gjf` containing the upstream step and the continuation separated by `--Link1--`. Gaussian's documented multistep layout requires a blank line before `--Link1--`, and Link 0 commands belong to each step, so the file carries a Link 0 block per link: upstream names its `%Chk`; the continuation names `%OldChk` and its own distinct `%Chk` ([Gaussian 16 input](https://gaussian.com/input/), [Link 0 commands](https://gaussian.com/link0/)). Prefer the DAG when steps must be inspected or run on different resources; prefer Link1 when the chain should be submitted as one entity.
+
+**Gates.** Importing a log runs the configured checks; any required `unknown` yields `needs-review`, never pass. The built-in gates are:
+
+| Gate | Default | What it checks |
+|---|---|---|
+| Normal termination | required | `Normal termination of Gaussian` present; explicit error termination fails |
+| Route echo matches | required | the log's echoed route tokens contain the configured method, basis (including GenECP), job type, dispersion, solvation, grid, SCF, and population keywords; conflicting tokens fail with a diff, missing echo is `unknown`, harmless extras (`Test`, `MaxDisk`) are ignored |
+| SCF convergence | optional | `SCF Done` present; explicit SCF failure fails |
+| Optimisation | route-implied | optimisation-completion marker for `Opt` jobs |
+| Frequency record | route-implied | a frequency record for `Freq` jobs |
+| Thermochemistry | route-implied | ZPE, H, and G totals for `Freq` jobs; missing values are `unknown` |
+| Method final energy | method-implied | a labelled post-HF/composite total for post-HF, double-hybrid, and composite methods |
+| Imaginary modes | optional / 0 for minima | expected count; non-TS `Freq` jobs expect zero. For saddle searches every stored mode must also clear `minImaginaryMagnitude` (default **50 cm⁻¹**, `null` disables the floor). A −4 cm⁻¹ artefact fails with `-4 cm-1 < 50 cm-1` as evidence |
+
+Thresholds and counts are stored in `.ghproject.json` and validated on load. The Workbench exposes the expected count and the saddle threshold in the task editor. The standalone inspector shows the same threshold verdict when a caller supplies `minImaginaryMagnitude`.
+
+**Project files.** Save/Open use a versioned `.ghproject.json` with bounded parsed evidence, not raw logs. Config fields that affect the calculation — including GenECP `elementBasis`/`ecp` assignments, fragment specs, the route-validation toggles, conformer provenance, and provenance records — are preserved on save and re-validated on load. Changing inputs, dependencies, or gates invalidates affected downstream results.
+
+**Bundle export.** One `<project>.workflow.zip` containing every task's `.gjf` (including blocked tasks — this deliberately differs from the single-task ready-only rule), `<input>.provenance.json` per task, `manifest.json` (DAG, filenames, gates; data only), `submit-slurm.sh` + `task-<id>.slurm`, `submit-pbs.sh` + `task-<id>.pbs`, and a commented `run-all.sh`. Dependencies are encoded with `afterok` chains, so a diamond `A → B, A → C, B + C → D` submits B and C after A and D after both. Exporting a bundle does not mark tasks as awaiting output. The scripts are inert and **do not validate results**; import the logs into the Workbench for that.
+
+---
+
+## Provenance manifests
+
+Every exported input is accompanied by `<input>.provenance.json`, a pretty-printed, key-sorted record:
+
+- app name, version from `package.json`, and the short git commit injected at build time (a source tree without git metadata records `"unknown"` rather than inventing one);
+- one ISO generation timestamp — the record contains no other volatile data, so two exports differ only in `generatedAt`;
+- method, basis (`GenECP` for mixed-basis inputs), job type, dispersion, solvation, grid, SCF, population, and custom keywords, trimmed rather than silently normalised;
+- charge, multiplicity, atom count, and Hill formula (null/0 where `Geom=AllCheck` omits the molecule specification);
+- geometry source (`drawn`, `smiles` + string, `file` + filename, `checkpoint`, or `unknown`), conformer/ensemble fields when recorded, and task/parent ids;
+- lowercase SHA-256 of the exact `.gjf` text, including `%OldChk` where present.
+
+The Workbench stores the bounded subset per task and shows it under the task; the compact record is cleared when the task's configuration or dependencies change, so it cannot describe a stale input. Bundle export writes the full sidecar for every task and lists each filename in `manifest.json`. The sidecar describes the **input**; imported log evidence stays in the project file, because the sidecar is written before the calculation runs.
+
+---
+
+## What it does not do
+
+- **It does not run Gaussian.** It generates inputs and scripts; execution and job control are yours.
+- **It does not validate shell-side.** The batch runner reports termination markers only. Gate parity lives in the browser; a fail-fast executor would need its own tested validator and is out of scope.
+- **It does not enumerate tautomers/protomers** or protonation states at a chosen pH.
+- **It does not ship raw ECP parameters.** It uses Gaussian's built-in ECP bases and the documented simplified GenECP format.
+- **It does not auto-guess fragment atom ranges.** The fragment spec is explicit; a UI editor is still to come.
+- **It does not upload, autosave, or phone home.**
+
+---
+
+## Developer setup
+
+```bash
+npm install
+npm run dev        # Vite dev server with hot reload
+npm test           # Vitest: 25 files, 388 tests
+npm run build      # vite build + dist.zip/dist.tar.gz (gitignored)
+```
+
+The suite covers generators, parsers, validators, the workflow model/gates, bundle export, provenance, and UI-free component logic. There is no CI workflow in the repository; the local suite is the gate.
+
+### Project layout
+
+| Path | Responsibility |
+|---|---|
+| `src/components/` | UI: molecule input, parameters, preview, viewer, batch generator, output inspector, workflow workbench |
+| `src/data/` | Curated method/basis/solvent/preset lists and the route keyword registry |
+| `src/generators/` | GJF route/geometry generation, GenECP blocks, `--Link1--` inputs |
+| `src/parsers/` | XYZ/MOL/CDXML/SMILES parsers and the streaming Gaussian log parser |
+| `src/utils/` | Validation, lint/cost, conformers, workflow model/gates, bundle export, ZIP writer, provenance, basis coverage |
+| `test/` | Vitest suites, one file per feature area |
+| `docs/` | Architecture and validation model |
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module/data-flow map and [docs/VALIDATION.md](docs/VALIDATION.md) for exactly what each gate does and does not prove.
+
+---
+
+## Versioning and releases
+
+`main` is the released line. Prebuilt bundles are attached to GitHub Releases and named with the commit they were built from; the repository itself never commits build outputs. See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
+
+`package.json` keeps `"private": true` deliberately: GaussianHelper is a browser application, not an npm library, so an accidental `npm publish` is blocked.
+
+---
+
+## AI disclaimer
+
+This project has been developed with the assistance of agentic AI models. The application, file parsers, and input generators are tested, but users must verify generated `.gjf` files and execution scripts before running calculations on production clusters. A validation gate is evidence of a marker in a log, not proof of scientific correctness.
+
+---
+
+## License and credits
+
+- **Developer & credits:** xharl
+- **License:** GNU General Public License v3 (GPLv3). See [LICENSE](LICENSE).
