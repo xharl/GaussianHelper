@@ -1,6 +1,6 @@
 # Workbench visual-programming sketches
 
-Two disposable, self-contained interaction concepts for the GaussianHelper project workbench. Open either `index.html` directly in a browser; there is no build step, external dependency, or Gaussian execution.
+Two disposable workflow-interaction concepts and one application-shell mockup for the GaussianHelper project workbench. Open any `index.html` directly in a browser; there is no build step, external dependency, or Gaussian execution.
 
 | Dimension | [Node studio](001-node-studio/index.html) | [Guided runbook](002-guided-runbook/index.html) |
 |---|---|---|
@@ -14,6 +14,10 @@ Two disposable, self-contained interaction concepts for the GaussianHelper proje
 ## Recommendation
 
 Use **Node studio** as the primary design direction. Its graph maps directly to the existing Workbench DAG, checkpoint bindings, and output gates. Borrow the runbook's **next-action card, explicit blocked reasons, and external-handoff checklist** for the right inspector. A later read-only "Runbook" view could explain the same project model without introducing a second workflow representation.
+
+## Node-first application shell (003)
+
+[Open the shell mockup](003-node-first/index.html) — applies the Node studio direction to the whole application: full-bleed canvas, add-block palette, contextual inspector that exposes the full Current Job parameter set, condition/loop blocks, and a project molecule drawer. This is an application-shell proposal, not a third workflow model; its README states the control-flow caveats explicitly.
 
 ## Shared domain rules illustrated
 
