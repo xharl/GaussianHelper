@@ -15,6 +15,12 @@ export class GJFPreview {
     this.container = container;
     this.onAddToBatch = onAddToBatch;
     this.currentGJF = '';
+    // Advanced route-validation escape hatches. Both are off by default; the
+    // checkboxes below mirror them and re-render this preview on change.
+    this.allowUnknownRouteTokens = false;
+    this.strictRouteTokens = false;
+    this.lastParams = null;
+    this.lastMolecule = null;
     this.render();
   }
 
@@ -39,6 +45,17 @@ export class GJFPreview {
             </button>
           </div>
         </div>
+        <div class="route-validation-options" style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: 8px 16px; border-bottom: 1px solid var(--border-primary); background: var(--bg-secondary);">
+          <label class="form-checkbox-wrapper" title="Unknown route keywords become warnings. Enable only for intentional custom functionals, IOp, or keywords newer than the bundled registry.">
+            <input type="checkbox" id="allow-unknown-route-tokens" class="form-checkbox" ${this.allowUnknownRouteTokens ? 'checked' : ''}>
+            <span class="form-checkbox-label">Allow unknown route keywords</span>
+          </label>
+          <label class="form-checkbox-wrapper" title="Also validate the free-text Extra Keywords field against the Gaussian keyword registry.">
+            <input type="checkbox" id="strict-route-tokens" class="form-checkbox" ${this.strictRouteTokens ? 'checked' : ''}>
+            <span class="form-checkbox-label">Strictly validate extra keywords</span>
+          </label>
+          <span style="color: var(--text-tertiary); font-size: 11px;">Warnings never block generation; route-unsafe characters always do.</span>
+        </div>
         <div id="gjf-warnings" class="code-warnings-container hidden"></div>
         <div class="code-body" id="gjf-code">
           <div class="code-placeholder">
@@ -59,6 +76,27 @@ export class GJFPreview {
     if (addBatchBtn && this.onAddToBatch) {
       addBatchBtn.addEventListener('click', () => this.onAddToBatch());
     }
+
+    const allowUnknownToggle = this.container.querySelector('#allow-unknown-route-tokens');
+    if (allowUnknownToggle) {
+      allowUnknownToggle.addEventListener('change', () => {
+        this.allowUnknownRouteTokens = allowUnknownToggle.checked;
+        this.refreshPreview();
+      });
+    }
+
+    const strictToggle = this.container.querySelector('#strict-route-tokens');
+    if (strictToggle) {
+      strictToggle.addEventListener('change', () => {
+        this.strictRouteTokens = strictToggle.checked;
+        this.refreshPreview();
+      });
+    }
+  }
+
+  /** Re-run the preview after an advanced validation toggle changes. */
+  refreshPreview() {
+    if (this.lastParams) this.update(this.lastParams, this.lastMolecule);
   }
 
   /**
@@ -68,6 +106,11 @@ export class GJFPreview {
    */
   update(params, molecule) {
     if (!params) return;
+
+    // Remembered so the advanced validation toggles can re-render this preview
+    // without waiting for the parent to push new parameters.
+    this.lastParams = params;
+    this.lastMolecule = molecule;
 
     try {
       const config = this.buildConfig(params, molecule);
@@ -121,6 +164,11 @@ export class GJFPreview {
         solvation: solvation,
         pop: params.pop || '',
         custom: params.customKeywords || '',
+        // Advanced route-token validation escape hatches (see README):
+        // unknown keywords are warnings that this flag can silence; unsafe
+        // characters are always errors.
+        allowUnknownRouteTokens: this.allowUnknownRouteTokens === true,
+        strictRouteTokens: this.strictRouteTokens === true,
       },
       title: params.title || 'Gaussian calculation',
       charge: molecule ? molecule.charge : 0,
@@ -197,34 +245,67 @@ export class GJFPreview {
   }
 
   /**
-   * Render the severity-tagged lint list (warnings amber, informational notes
-   * blue). All message text is escaped.
+   * Render the severity-tagged lint list (errors red, warnings amber,
+   * informational notes blue). All message text is escaped.
    */
   renderLintPanel(issues) {
     if (!issues || issues.length === 0) return '';
 
+    const errorCount = issues.filter((issue) => issue.severity === 'error').length;
     const warningCount = issues.filter((issue) => issue.severity === 'warning').length;
-    const infoCount = issues.length - warningCount;
-    const accent = warningCount > 0 ? 'var(--warning)' : 'var(--info)';
-    const border = warningCount > 0 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(59, 130, 246, 0.2)';
-    const background = warningCount > 0 ? 'rgba(245, 158, 11, 0.05)' : 'rgba(59, 130, 246, 0.05)';
-    const warningLabel = `${warningCount} warning${warningCount === 1 ? '' : 's'}`;
-    const infoLabel = `${infoCount} note${infoCount === 1 ? '' : 's'}`;
+    const infoCount = issues.length - errorCount - warningCount;
+
+    const accent = errorCount > 0 ? 'var(--error)' : warningCount > 0 ? 'var(--warning)' : 'var(--info)';
+    const border = errorCount > 0
+      ? 'rgba(239, 68, 68, 0.3)'
+      : warningCount > 0
+        ? 'rgba(245, 158, 11, 0.25)'
+        : 'rgba(59, 130, 246, 0.2)';
+    const background = errorCount > 0
+      ? 'rgba(239, 68, 68, 0.06)'
+      : warningCount > 0
+        ? 'rgba(245, 158, 11, 0.05)'
+        : 'rgba(59, 130, 246, 0.05)';
+
+    const counts = [
+      `${errorCount} error${errorCount === 1 ? '' : 's'}`,
+      `${warningCount} warning${warningCount === 1 ? '' : 's'}`,
+      `${infoCount} note${infoCount === 1 ? '' : 's'}`,
+    ].join(' · ');
+
+    const hasUnknownTokenWarning = issues.some((issue) => issue.id === 'route-token-unknown');
+    const escapeHatchHint = hasUnknownTokenWarning
+      ? `
+        <div style="margin-top: 6px; color: var(--text-tertiary); font-size: 11px;">
+          Unknown keywords never block generation. If a custom functional or IOp is intentional, tick
+          “Allow unknown route keywords” above to silence these warnings.
+        </div>
+      `
+      : '';
 
     return `
       <div class="form-recommendation" data-lint="preflight" style="margin: 12px 16px 0 16px; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid ${border}; background: ${background};">
         <div style="font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; color: ${accent};">
           <span class="info-icon">🧪</span> Pre-flight Chemistry Lint
-          <span style="font-weight: 400; color: var(--text-tertiary); font-size: 11px;">${warningLabel} · ${infoLabel}</span>
+          <span style="font-weight: 400; color: var(--text-tertiary); font-size: 11px;">${counts}</span>
         </div>
         <ul style="margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 11px; line-height: 1.45;">
-          ${issues.map((issue) => `
+          ${issues.map((issue) => {
+            const label = issue.severity === 'error' ? 'Error' : issue.severity === 'warning' ? 'Warning' : 'Info';
+            const color = issue.severity === 'error'
+              ? 'var(--error)'
+              : issue.severity === 'warning'
+                ? 'var(--warning)'
+                : 'var(--info)';
+            return `
             <li style="margin-bottom: 3px;">
-              <span style="font-weight: 600; color: ${issue.severity === 'warning' ? 'var(--warning)' : 'var(--info)'};">${issue.severity === 'warning' ? 'Warning' : 'Info'}:</span>
+              <span style="font-weight: 600; color: ${color};">${label}:</span>
               ${this.escapeHtml(issue.message)}
             </li>
-          `).join('')}
+          `;
+          }).join('')}
         </ul>
+        ${escapeHatchHint}
       </div>
     `;
   }

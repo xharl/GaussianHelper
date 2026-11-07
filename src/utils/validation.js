@@ -8,6 +8,7 @@
 import { getAtomicNumber } from './elements.js';
 import { getMethodByKeyword, methodIncludesDispersion } from '../data/methods.js';
 import { basisSets } from '../data/basisSets.js';
+import { getRouteKeyword } from '../data/keywordRegistry.js';
 import * as basisCoverage from './basisCoverage.js';
 
 /**
@@ -331,6 +332,269 @@ export function validateMethodBasis(method, basisSet) {
 }
 
 /**
+ * @typedef {Object} RouteTokenIssue
+ * @property {string} token - The offending route token, exactly as written.
+ * @property {string} field - Route field it came from (`method`, `basisSet`,
+ *   `jobType`, `scf`, ...), used to explain where to fix it.
+ * @property {string} message - Human-readable explanation.
+ */
+
+/**
+ * Human-readable labels for the route fields that reach the route section.
+ * @type {Readonly<Object<string, string>>}
+ */
+const ROUTE_FIELD_LABELS = Object.freeze({
+  method: 'the method field',
+  basisSet: 'the basis-set field',
+  jobType: 'the job-type field',
+  scf: 'the SCF option',
+  grid: 'the integration-grid option',
+  dispersion: 'the dispersion option',
+  solvation: 'the solvation option',
+  pop: 'the population-analysis option',
+  custom: 'the extra-keywords field',
+});
+
+/**
+ * Route fields that are copied verbatim into the route section as a sequence of
+ * keywords. `custom` is listed separately because it is only validated in
+ * strict mode.
+ */
+const ROUTE_KEYWORD_FIELDS = Object.freeze(['jobType', 'scf', 'grid', 'dispersion', 'solvation', 'pop']);
+
+/**
+ * Characters that cannot appear inside a single route token and what they mean.
+ * `=` and `#` are legal *between* keywords (`SCF=Tight`, `#N B3LYP`), never
+ * inside one; `/` separates method from basis at the section level, so a method
+ * or basis token that contains it would silently change the meaning of the
+ * route.
+ */
+const UNSAFE_ROUTE_CHARACTERS = Object.freeze({
+  '/': "the '/' method/basis separator",
+  '=': "the '=' option separator",
+  '#': "the '#' route marker",
+  '%': "the '%' Link 0 marker",
+});
+
+/**
+ * Find the first character in `token` that cannot be part of a route token.
+ *
+ * @param {string} token
+ * @returns {{char: string, description: string}|null} The offending character,
+ *   or null when the token is route-safe.
+ */
+export function findUnsafeRouteCharacter(token) {
+  for (const char of String(token ?? '')) {
+    if (Object.prototype.hasOwnProperty.call(UNSAFE_ROUTE_CHARACTERS, char)) {
+      return { char, description: UNSAFE_ROUTE_CHARACTERS[char] };
+    }
+    if (/\s/.test(char)) {
+      return { char, description: 'whitespace' };
+    }
+    const code = char.codePointAt(0);
+    if (code < 0x20 || code === 0x7f) {
+      return { char, description: 'a control character' };
+    }
+  }
+  return null;
+}
+
+/**
+ * Find whitespace or control characters anywhere in a keyword segment.
+ *
+ * Unlike {@link findUnsafeRouteCharacter} this does not reject `/` or `=`,
+ * because both are legal inside a parenthesised option list (`IOp(1/2=3)`).
+ *
+ * @param {string} text
+ * @returns {{char: string, description: string}|null}
+ */
+function findUnsafeSegmentCharacter(text) {
+  for (const char of String(text ?? '')) {
+    if (/\s/.test(char)) return { char, description: 'whitespace' };
+    const code = char.codePointAt(0);
+    if (code < 0x20 || code === 0x7f) return { char, description: 'a control character' };
+  }
+  return null;
+}
+
+/**
+ * Split route text into keyword segments.
+ *
+ * Whitespace separates keywords, except inside parentheses: `Opt=(TS, CalcFC)`
+ * stays one segment. Only the space character is a separator; tabs and line
+ * breaks are reported as unsafe characters rather than silently accepted,
+ * because the generator joins fields with single spaces and a line break would
+ * corrupt the route section.
+ *
+ * @param {string} value - Route text, e.g. 'Opt Freq SCRF=(SMD,Solvent=Water)'.
+ * @returns {string[]} Keyword segments, in input order.
+ */
+export function splitRouteKeywords(value) {
+  if (typeof value !== 'string' || value.trim() === '') return [];
+
+  const segments = [];
+  let current = '';
+  let depth = 0;
+
+  for (const char of value) {
+    if (char === ' ' && depth === 0) {
+      if (current !== '') {
+        segments.push(current);
+        current = '';
+      }
+      continue;
+    }
+    if (char === '(') depth += 1;
+    else if (char === ')' && depth > 0) depth -= 1;
+    current += char;
+  }
+
+  if (current !== '') segments.push(current);
+  return segments;
+}
+
+/**
+ * The keyword that owns a segment: the text before the first `=` or `(`.
+ * `EmpiricalDispersion=GD3BJ` -> `EmpiricalDispersion`; `Opt=(TS,CalcFC)` ->
+ * `Opt`; `IOp(1/2=3)` -> `IOp`.
+ *
+ * @param {string} segment
+ * @returns {string}
+ */
+function routeKeywordName(segment) {
+  const end = segment.search(/[=(]/);
+  return end === -1 ? segment : segment.slice(0, end);
+}
+
+/**
+ * Validate every token that the generator will copy into the route section
+ * against the documented Gaussian 16 keyword registry.
+ *
+ * Severity follows issue #18:
+ *   - **errors** are reserved for route-unsafe characters (whitespace, `/`,
+ *     `=`, `#`, `%`, control characters) *inside* a token. Such a token cannot
+ *     mean what the user intends and is never suppressible.
+ *   - **warnings** are unknown keywords. Gaussian rejects or silently ignores
+ *     them, but users legitimately need custom functionals, `IOp`, and newer
+ *     keywords, so the route is not blocked.
+ *
+ * The free-text `custom` field is pasted verbatim by the user and is therefore
+ * skipped by default; set `route.strictRouteTokens === true` to validate it
+ * too. `route.allowUnknownRouteTokens === true` suppresses every unknown-token
+ * warning (documented advanced escape hatch) but never suppresses errors.
+ *
+ * Only the keyword that owns a parenthesised list is validated; individual
+ * sub-options (`Tight`, `Solvent=Water`, `GD3BJ`) are documented in the
+ * registry metadata and deliberately not rejected, because Gaussian has many
+ * legitimate sub-options that this app does not enumerate.
+ *
+ * @param {Object} route - Route-section configuration.
+ * @param {string} [route.method] - Method token.
+ * @param {string} [route.basisSet] - Basis-set token.
+ * @param {string} [route.basisMode] - 'GenECP' when the basis slot is GenECP.
+ * @param {string} [route.jobType] - Calculation-type keywords.
+ * @param {string} [route.scf] - SCF keyword.
+ * @param {string} [route.grid] - Integration-grid keyword.
+ * @param {string} [route.dispersion] - Empirical dispersion keyword.
+ * @param {string} [route.solvation] - SCRF keyword.
+ * @param {string} [route.pop] - Population keyword.
+ * @param {string} [route.custom] - Free-text extra keywords.
+ * @param {boolean} [route.allowUnknownRouteTokens] - Suppress unknown warnings.
+ * @param {boolean} [route.strictRouteTokens] - Also validate `custom`.
+ * @returns {{errors: RouteTokenIssue[], warnings: RouteTokenIssue[]}}
+ */
+export function validateRouteTokens(route) {
+  const errors = [];
+  const warnings = [];
+
+  if (!route || typeof route !== 'object') {
+    return { errors, warnings };
+  }
+
+  const allowUnknown = route.allowUnknownRouteTokens === true;
+  const strict = route.strictRouteTokens === true;
+
+  const labelFor = (field) => ROUTE_FIELD_LABELS[field] ?? `the ${field} field`;
+
+  const pushUnsafe = (segment, field, unsafe) => {
+    errors.push({
+      token: segment,
+      field,
+      message:
+        `Route token "${segment}" in ${labelFor(field)} contains ${unsafe.description}, ` +
+        'which is not allowed inside a route token.',
+    });
+  };
+
+  const pushUnknown = (token, field) => {
+    if (allowUnknown) return;
+    warnings.push({
+      token,
+      field,
+      message:
+        `Unknown route keyword "${token}" in ${labelFor(field)}. ` +
+        'Gaussian may reject it or silently ignore it. Check the spelling, or set ' +
+        'allowUnknownRouteTokens: true if the keyword is intentional ' +
+        '(a custom functional, IOp, or a newer Gaussian keyword).',
+    });
+  };
+
+  /** Validate one token that must not contain separators at all. */
+  const checkAtomicToken = (value, field) => {
+    if (typeof value !== 'string') return;
+    const token = value.trim();
+    if (token === '') return;
+
+    const unsafe = findUnsafeRouteCharacter(token);
+    if (unsafe) {
+      pushUnsafe(token, field, unsafe);
+      return;
+    }
+    if (!getRouteKeyword(token)) pushUnknown(token, field);
+  };
+
+  /** Validate a field that holds one or more space-separated keywords. */
+  const checkKeywordList = (value, field) => {
+    if (typeof value !== 'string') return;
+
+    for (const segment of splitRouteKeywords(value)) {
+      const rawUnsafe = findUnsafeSegmentCharacter(segment);
+      if (rawUnsafe) {
+        pushUnsafe(segment, field, rawUnsafe);
+        continue;
+      }
+
+      const name = routeKeywordName(segment);
+      const unsafe = findUnsafeRouteCharacter(name);
+      if (unsafe) {
+        pushUnsafe(segment, field, unsafe);
+        continue;
+      }
+
+      if (!getRouteKeyword(name)) pushUnknown(segment, field);
+    }
+  };
+
+  checkAtomicToken(route.method, 'method');
+
+  // `Method/GenECP` puts GenECP in the basis slot even though route.basisSet is
+  // empty, so validate the token that will actually be emitted.
+  const basisMode = typeof route.basisMode === 'string' ? route.basisMode.trim() : '';
+  const effectiveBasis = basisMode.toLowerCase() === 'genecp' ? 'GenECP' : route.basisSet;
+  checkAtomicToken(effectiveBasis, 'basisSet');
+
+  for (const field of ROUTE_KEYWORD_FIELDS) {
+    checkKeywordList(route[field], field);
+  }
+
+  if (strict) {
+    checkKeywordList(route.custom, 'custom');
+  }
+
+  return { errors, warnings };
+}
+
+/**
  * Validate that all required fields in the application state are filled
  * before generating a Gaussian input file.
  *
@@ -461,8 +725,9 @@ export function validateInputCompleteness(state) {
 /**
  * @typedef {Object} LintIssue
  * @property {string} id - Stable rule identifier (used by tests and the UI).
- * @property {'warning'|'info'} severity - `warning` for configurations that
- *   are likely wrong or wasteful, `info` for advice that does not invalidate
+ * @property {'error'|'warning'|'info'} severity - `error` for a route token
+ *   that cannot be emitted safely, `warning` for configurations that are
+ *   likely wrong or wasteful, `info` for advice that does not invalidate
  *   the job.
  * @property {string} message - Human-readable explanation.
  */
@@ -581,6 +846,9 @@ function requestsTsOptimization(routeText) {
  *   7. Heavy element (Z > 36) on a basis without ECP coverage.
  *   8. A method that does not take a basis set (semi-empirical, MM,
  *      composite) given one anyway.
+ *   9. Route tokens that are not in the Gaussian 16 keyword registry
+ *      (warning, quoting the token) or that contain route-unsafe characters
+ *      (error). See {@link validateRouteTokens} for the escape hatches.
  *
  * Retained from the previous recommendation list: ECP advice for transition
  * metals, diffuse functions for anions/excited states, and the small-basis
@@ -779,6 +1047,15 @@ export function lintTheoryLevel(config) {
       `${methodKeyword} is ${kind} and does not use an external basis set; remove ${basisRaw}. ` +
       `Gaussian would ignore or reject the basis keyword for this method.`
     );
+  }
+
+  // ── Rule 9: route tokens vs. the documented Gaussian keyword registry ──
+  const routeTokens = validateRouteTokens(route);
+  for (const error of routeTokens.errors) {
+    push('route-token-unsafe', 'error', error.message);
+  }
+  for (const warning of routeTokens.warnings) {
+    push('route-token-unknown', 'warning', warning.message);
   }
 
   return { issues, estimate: estimateCalculationCost(config) };
