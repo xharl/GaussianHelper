@@ -2,6 +2,19 @@
  * Gaussian calculation methods organized by category.
  * Each method: { keyword, name, description, category, subcategory, popular, needsBasis }
  *
+ * Chemistry-lint metadata (consumed by src/utils/validation.js):
+ *   - isDft: true for Kohn-Sham DFT functionals (false for HF, post-HF,
+ *     composite, semi-empirical and molecular-mechanics methods).
+ *   - rung: Jacob's-ladder / method class. One of 'HF' | 'LDA' | 'GGA' |
+ *     'meta-GGA' | 'hybrid' | 'meta-hybrid' | 'double-hybrid' | 'post-HF' |
+ *     'composite' | 'semi-empirical' | 'MM'. Drives the dispersion, basis-size
+ *     and cost-estimate heuristics.
+ *   - isRangeSeparated: true only for long-range-corrected functionals
+ *     (CAM-B3LYP, wB97 family, LC-wPBE, M11). Absent means false.
+ *   - costExponent: optional N-scaling override for the order-of-magnitude
+ *     cost panel, where the rung alone is too coarse (e.g. MP2 N^5 vs
+ *     CCSD(T) N^7). This is a textbook scaling law, not a measured runtime.
+ *
  * `keyword` is the exact route-section token and must be a standalone Gaussian
  * method keyword. `name` is display-only and may use literature notation
  * (e.g. "M06-2X", "ωB97X-D") that is not itself a route token.
@@ -9,7 +22,9 @@
  * Methods whose `keyword` already implies an empirical dispersion model
  * (e.g. B2PLYPD3 = B2PLYP + D3(BJ), see https://gaussian.com/dft/) carry
  * `alreadyIncludesDispersion: true`, so the UI and generator can block a
- * second, double-counting EmpiricalDispersion request.
+ * second, double-counting EmpiricalDispersion request. Verified against
+ * gaussian.com: B2PLYPD3 (D3BJ), wB97XD (D2), APFD (PFD), B97D (D2) and
+ * DSDPBEP86 (D3BJ, https://gaussian.com/mp/).
  */
 
 export const methods = [
@@ -22,6 +37,8 @@ export const methods = [
     subcategory: 'GGA',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'GGA',
   },
   {
     keyword: 'BP86',
@@ -31,6 +48,8 @@ export const methods = [
     subcategory: 'GGA',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'GGA',
   },
   {
     keyword: 'PBEPBE',
@@ -40,6 +59,8 @@ export const methods = [
     subcategory: 'GGA',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'GGA',
   },
   {
     keyword: 'PW91PW91',
@@ -49,6 +70,8 @@ export const methods = [
     subcategory: 'GGA',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'GGA',
   },
 
   // ─── DFT - Meta-GGA ─────────────────────────────────────────────────
@@ -60,6 +83,8 @@ export const methods = [
     subcategory: 'Meta-GGA',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'meta-GGA',
   },
   {
     keyword: 'M06L',
@@ -69,6 +94,8 @@ export const methods = [
     subcategory: 'Meta-GGA',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'meta-GGA',
   },
 
   // ─── DFT - Hybrid ───────────────────────────────────────────────────
@@ -80,6 +107,8 @@ export const methods = [
     subcategory: 'Hybrid',
     popular: true,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
   },
   {
     keyword: 'B3PW91',
@@ -89,6 +118,8 @@ export const methods = [
     subcategory: 'Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
   },
   {
     keyword: 'PBE1PBE',
@@ -98,6 +129,8 @@ export const methods = [
     subcategory: 'Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
   },
   {
     keyword: 'BHandHLYP',
@@ -107,6 +140,8 @@ export const methods = [
     subcategory: 'Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
   },
   {
     keyword: 'O3LYP',
@@ -116,6 +151,8 @@ export const methods = [
     subcategory: 'Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
   },
   {
     keyword: 'X3LYP',
@@ -125,6 +162,8 @@ export const methods = [
     subcategory: 'Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
   },
 
   // ─── DFT - Meta-Hybrid ──────────────────────────────────────────────
@@ -136,6 +175,8 @@ export const methods = [
     subcategory: 'Meta-Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'meta-hybrid',
   },
   {
     keyword: 'M052X',
@@ -145,6 +186,8 @@ export const methods = [
     subcategory: 'Meta-Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'meta-hybrid',
   },
   {
     keyword: 'M06',
@@ -154,6 +197,8 @@ export const methods = [
     subcategory: 'Meta-Hybrid',
     popular: true,
     needsBasis: true,
+    isDft: true,
+    rung: 'meta-hybrid',
   },
   {
     keyword: 'M062X',
@@ -163,6 +208,8 @@ export const methods = [
     subcategory: 'Meta-Hybrid',
     popular: true,
     needsBasis: true,
+    isDft: true,
+    rung: 'meta-hybrid',
   },
   {
     keyword: 'M11',
@@ -172,6 +219,9 @@ export const methods = [
     subcategory: 'Meta-Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'meta-hybrid',
+    isRangeSeparated: true,
   },
   {
     keyword: 'MN15',
@@ -181,6 +231,8 @@ export const methods = [
     subcategory: 'Meta-Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'meta-hybrid',
   },
   {
     keyword: 'BMK',
@@ -190,6 +242,8 @@ export const methods = [
     subcategory: 'Meta-Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'meta-hybrid',
   },
 
   // ─── DFT - Range-Separated ──────────────────────────────────────────
@@ -201,6 +255,9 @@ export const methods = [
     subcategory: 'Range-Separated',
     popular: true,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
+    isRangeSeparated: true,
   },
   {
     keyword: 'wB97',
@@ -210,6 +267,9 @@ export const methods = [
     subcategory: 'Range-Separated',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
+    isRangeSeparated: true,
   },
   {
     keyword: 'wB97X',
@@ -219,6 +279,9 @@ export const methods = [
     subcategory: 'Range-Separated',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
+    isRangeSeparated: true,
   },
   {
     keyword: 'wB97XD',
@@ -228,6 +291,10 @@ export const methods = [
     subcategory: 'Range-Separated',
     popular: true,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
+    isRangeSeparated: true,
+    alreadyIncludesDispersion: true,
   },
   {
     keyword: 'LC-wPBE',
@@ -237,6 +304,9 @@ export const methods = [
     subcategory: 'Range-Separated',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'hybrid',
+    isRangeSeparated: true,
   },
 
   // ─── DFT - Double Hybrid ────────────────────────────────────────────
@@ -248,6 +318,8 @@ export const methods = [
     subcategory: 'Double Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'double-hybrid',
   },
   {
     keyword: 'B2PLYPD3',
@@ -258,6 +330,8 @@ export const methods = [
     popular: false,
     needsBasis: true,
     alreadyIncludesDispersion: true,
+    isDft: true,
+    rung: 'double-hybrid',
   },
   {
     keyword: 'mPW2PLYP',
@@ -267,6 +341,8 @@ export const methods = [
     subcategory: 'Double Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'double-hybrid',
   },
   {
     keyword: 'DSDPBEP86',
@@ -276,6 +352,9 @@ export const methods = [
     subcategory: 'Double Hybrid',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'double-hybrid',
+    alreadyIncludesDispersion: true,
   },
 
   // ─── DFT - Dispersion-Included ──────────────────────────────────────
@@ -287,6 +366,9 @@ export const methods = [
     subcategory: 'Dispersion-Included',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'GGA',
+    alreadyIncludesDispersion: true,
   },
   {
     keyword: 'B97D',
@@ -296,6 +378,9 @@ export const methods = [
     subcategory: 'Dispersion-Included',
     popular: false,
     needsBasis: true,
+    isDft: true,
+    rung: 'GGA',
+    alreadyIncludesDispersion: true,
   },
 
   // ─── Ab Initio - Hartree-Fock ────────────────────────────────────────
@@ -307,6 +392,8 @@ export const methods = [
     subcategory: 'Hartree-Fock',
     popular: true,
     needsBasis: true,
+    isDft: false,
+    rung: 'HF',
   },
 
   // ─── Ab Initio - Post-HF ────────────────────────────────────────────
@@ -318,6 +405,9 @@ export const methods = [
     subcategory: 'Post-HF',
     popular: true,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
+    costExponent: 5, // N-scaling for the heuristic cost panel
   },
   {
     keyword: 'MP3',
@@ -327,6 +417,9 @@ export const methods = [
     subcategory: 'Post-HF',
     popular: false,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
+    costExponent: 6, // N-scaling for the heuristic cost panel
   },
   {
     keyword: 'MP4',
@@ -336,6 +429,9 @@ export const methods = [
     subcategory: 'Post-HF',
     popular: false,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
+    costExponent: 7, // N-scaling for the heuristic cost panel
   },
   {
     keyword: 'CCSD',
@@ -345,6 +441,9 @@ export const methods = [
     subcategory: 'Post-HF',
     popular: false,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
+    costExponent: 6, // N-scaling for the heuristic cost panel
   },
   {
     keyword: 'CCSD(T)',
@@ -354,6 +453,9 @@ export const methods = [
     subcategory: 'Post-HF',
     popular: true,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
+    costExponent: 7, // N-scaling for the heuristic cost panel
   },
   {
     keyword: 'CISD',
@@ -363,6 +465,9 @@ export const methods = [
     subcategory: 'Post-HF',
     popular: false,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
+    costExponent: 6, // N-scaling for the heuristic cost panel
   },
   {
     keyword: 'QCISD',
@@ -372,6 +477,9 @@ export const methods = [
     subcategory: 'Post-HF',
     popular: false,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
+    costExponent: 6, // N-scaling for the heuristic cost panel
   },
   {
     keyword: 'QCISD(T)',
@@ -381,6 +489,9 @@ export const methods = [
     subcategory: 'Post-HF',
     popular: false,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
+    costExponent: 7, // N-scaling for the heuristic cost panel
   },
 
   // ─── Ab Initio - Multi-Reference ────────────────────────────────────
@@ -392,6 +503,8 @@ export const methods = [
     subcategory: 'Multi-Reference',
     popular: false,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
   },
   {
     keyword: 'CIS',
@@ -401,6 +514,9 @@ export const methods = [
     subcategory: 'Multi-Reference',
     popular: false,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
+    costExponent: 4, // N-scaling for the heuristic cost panel
   },
   {
     keyword: 'SAC-CI',
@@ -410,6 +526,9 @@ export const methods = [
     subcategory: 'Multi-Reference',
     popular: false,
     needsBasis: true,
+    isDft: false,
+    rung: 'post-HF',
+    costExponent: 6, // N-scaling for the heuristic cost panel
   },
 
   // ─── Composite ──────────────────────────────────────────────────────
@@ -421,6 +540,8 @@ export const methods = [
     subcategory: 'CBS',
     popular: true,
     needsBasis: false,
+    isDft: false,
+    rung: 'composite',
   },
   {
     keyword: 'CBS-4M',
@@ -430,6 +551,8 @@ export const methods = [
     subcategory: 'CBS',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'composite',
   },
   {
     keyword: 'CBS-APNO',
@@ -439,6 +562,8 @@ export const methods = [
     subcategory: 'CBS',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'composite',
   },
   {
     keyword: 'G3',
@@ -448,6 +573,8 @@ export const methods = [
     subcategory: 'Gaussian-N',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'composite',
   },
   {
     keyword: 'G3MP2',
@@ -457,6 +584,8 @@ export const methods = [
     subcategory: 'Gaussian-N',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'composite',
   },
   {
     keyword: 'G3B3',
@@ -466,6 +595,8 @@ export const methods = [
     subcategory: 'Gaussian-N',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'composite',
   },
   {
     keyword: 'G3MP2B3',
@@ -475,6 +606,8 @@ export const methods = [
     subcategory: 'Gaussian-N',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'composite',
   },
   {
     keyword: 'G4',
@@ -484,6 +617,8 @@ export const methods = [
     subcategory: 'Gaussian-N',
     popular: true,
     needsBasis: false,
+    isDft: false,
+    rung: 'composite',
   },
   {
     keyword: 'G4MP2',
@@ -493,6 +628,8 @@ export const methods = [
     subcategory: 'Gaussian-N',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'composite',
   },
   {
     keyword: 'W1BD',
@@ -502,6 +639,8 @@ export const methods = [
     subcategory: 'Weizmann',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'composite',
   },
 
   // ─── Semi-Empirical ─────────────────────────────────────────────────
@@ -513,6 +652,8 @@ export const methods = [
     subcategory: 'Semi-Empirical',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'semi-empirical',
   },
   {
     keyword: 'PM3',
@@ -522,6 +663,8 @@ export const methods = [
     subcategory: 'Semi-Empirical',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'semi-empirical',
   },
   {
     keyword: 'PM6',
@@ -531,6 +674,8 @@ export const methods = [
     subcategory: 'Semi-Empirical',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'semi-empirical',
   },
   {
     keyword: 'PM7',
@@ -540,6 +685,8 @@ export const methods = [
     subcategory: 'Semi-Empirical',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'semi-empirical',
   },
   {
     keyword: 'MNDO',
@@ -549,6 +696,8 @@ export const methods = [
     subcategory: 'Semi-Empirical',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'semi-empirical',
   },
   {
     keyword: 'INDO',
@@ -558,6 +707,8 @@ export const methods = [
     subcategory: 'Semi-Empirical',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'semi-empirical',
   },
 
   // ─── Molecular Mechanics ────────────────────────────────────────────
@@ -569,6 +720,8 @@ export const methods = [
     subcategory: 'Molecular Mechanics',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'MM',
   },
   {
     keyword: 'AMBER',
@@ -578,6 +731,8 @@ export const methods = [
     subcategory: 'Molecular Mechanics',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'MM',
   },
   {
     keyword: 'DREIDING',
@@ -587,6 +742,8 @@ export const methods = [
     subcategory: 'Molecular Mechanics',
     popular: false,
     needsBasis: false,
+    isDft: false,
+    rung: 'MM',
   },
 ];
 
