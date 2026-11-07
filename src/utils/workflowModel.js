@@ -1,4 +1,4 @@
-import { evaluateWorkflowOutput } from './workflowGates.js';
+import { evaluateWorkflowOutput, methodRequiresFinalEnergy } from './workflowGates.js';
 import { validateInputCompleteness } from './validation.js';
 
 export const WORKFLOW_SCHEMA_VERSION = 1;
@@ -50,6 +50,7 @@ export function createWorkflowTask(config, options = {}) {
       requireOptimizationComplete: /(?:^|\s)Opt(?:\b|=)/i.test(routeText),
       requireFrequencyRecord: /(?:^|\s)Freq(?:\b|=)/i.test(routeText),
       requireThermochemistry: /(?:^|\s)Freq(?:\b|=)/i.test(routeText),
+      requireFinalEnergy: methodRequiresFinalEnergy(snapshot.route.method),
       expectedImaginaryModes: null,
       ...options.gates,
       // Always required; not user-configurable in v1. Declared after the spread so a
@@ -181,6 +182,9 @@ export function validateWorkflowProject(project) {
       // Older v1 project files predate this gate; a missing flag is derived from the route on load.
       || (task.gates.requireThermochemistry !== undefined
         && typeof task.gates.requireThermochemistry !== 'boolean')
+      // Older v1 project files predate this gate; a missing flag is derived from the method on load.
+      || (task.gates.requireFinalEnergy !== undefined
+        && typeof task.gates.requireFinalEnergy !== 'boolean')
       || (task.gates.expectedImaginaryModes !== null
         && (!Number.isInteger(task.gates.expectedImaginaryModes) || task.gates.expectedImaginaryModes < 0))) {
       errors.push(`Task "${task.id || '?'}" has invalid validation gates.`);
@@ -394,6 +398,9 @@ function validateParsedSection(section) {
     || (scf.method !== null && (typeof scf.method !== 'string' || scf.method.length > 100))
     || (scf.energyHartree !== null && !Number.isFinite(scf.energyHartree))
     || !Number.isInteger(scf.records) || scf.records < 0 || !isOptionalLine(scf.line) || !isOptionalEvidence(scf.evidence)) return false;
+  // Older saved projects predate the method-energy block; a missing block is normalized on save.
+  if (section.finalEnergy !== null && section.finalEnergy !== undefined
+    && !validateFinalEnergyBlock(section.finalEnergy)) return false;
   const optimization = section.optimization;
   if (!isRecord(optimization) || !['unknown', 'converged', 'not converged'].includes(optimization.status)
     || !isOptionalLine(optimization.line) || !isOptionalEvidence(optimization.evidence)) return false;
@@ -429,6 +436,16 @@ function isOptionalEvidence(value) {
 
 function isOptionalFinite(value) {
   return value === null || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function validateFinalEnergyBlock(block) {
+  if (!isRecord(block)) return false;
+  const hasValue = block.valueHartree !== null && block.valueHartree !== undefined;
+  const hasLabel = block.label !== null && block.label !== undefined;
+  if (hasValue !== hasLabel) return false;
+  if (hasValue && !isOptionalFinite(block.valueHartree)) return false;
+  if (hasLabel && (typeof block.label !== 'string' || block.label.length === 0 || block.label.length > 100)) return false;
+  return isOptionalLine(block.line) && isOptionalEvidence(block.evidence);
 }
 
 function validateThermochemistryBlock(block) {
@@ -499,6 +516,7 @@ function sanitizeWorkflowProject(project) {
         requireOptimizationComplete: task.gates.requireOptimizationComplete,
         requireFrequencyRecord: task.gates.requireFrequencyRecord,
         requireThermochemistry: task.gates.requireThermochemistry ?? routeHasKeyword(task.config, 'Freq'),
+        requireFinalEnergy: task.gates.requireFinalEnergy ?? methodRequiresFinalEnergy(task.config?.route?.method),
         expectedImaginaryModes: task.gates.expectedImaginaryModes,
       },
       activeAttemptId: task.activeAttemptId || null,
@@ -548,6 +566,12 @@ function sanitizeParsedSection(section) {
       minImaginary: section.frequencies.minImaginary ?? null,
       line: section.frequencies.line ?? null,
       evidence: section.frequencies.evidence ?? null,
+    },
+    finalEnergy: {
+      valueHartree: section.finalEnergy?.valueHartree ?? null,
+      label: section.finalEnergy?.label ?? null,
+      line: section.finalEnergy?.line ?? null,
+      evidence: section.finalEnergy?.evidence ?? null,
     },
     thermochemistry: {
       zeroPointHartree: section.thermochemistry?.zeroPointHartree ?? null,

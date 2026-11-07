@@ -50,8 +50,80 @@ const THERMOCHEMISTRY_ENTRIES = [
   },
 ];
 
+/**
+ * Post-SCF / composite final-energy lines. Each entry keeps the label printed by
+ * Gaussian so a report can say which method produced the number; `family` groups
+ * the alternative spellings a method may use (e.g. MP2 prints either
+ * `E(MP2) =` or `EUMP2=`).
+ *
+ * Forms verified against the Gaussian 16 keyword documentation:
+ *   - gaussian.com/mp: `EUMP2=`, `EUMP3=`, `UMP4(SDQ)=`, `UMP4(SDTQ)=`,
+ *     `E(B2PLYP) =` (double hybrids print `E(<functional>) =`).
+ *   - gaussian.com/cc: `CCSD(T)=`; plain CCSD prints only the correlation
+ *     energy as `E(Corr)=`, so that line is deliberately not treated as a total.
+ *   - gaussian.com/cbs: `CBS-QB3 (0 K)=` in the CBS summary block (the
+ *     `... Energy=` columns are thermal-corrected and are not used).
+ *   - gaussian.com/gn and gaussian.com/w1: `G3(0 K)=`, `G4(0 K)=`,
+ *     `W1U  (0 K)=` — the same `Method (0 K)=` layout is used by the other
+ *     G-n and Weizmann variants.
+ *
+ * The `(?:^|[\s,])` prefix keeps compound labels such as `DE(MP2)` (a CBS
+ * correlation increment) or `E2(B2PLYP)` from being mistaken for totals.
+ */
+const FINAL_ENERGY_PATTERNS = [
+  finalEnergyEntry('E(MP2)', 'MP2', ['E\\(MP2\\)', 'EUMP2']),
+  finalEnergyEntry('E(MP3)', 'MP3', ['E\\(MP3\\)', 'EUMP3']),
+  finalEnergyEntry('E(MP4)', 'MP4', ['E\\(MP4\\)', 'U?MP4\\(SDTQ\\)']),
+  finalEnergyEntry('E(MP4SDQ)', 'MP4SDQ', ['E\\(MP4SDQ\\)', 'U?MP4\\(SDQ\\)']),
+  finalEnergyEntry('E(CCSD)', 'CCSD', ['E\\(CCSD\\)']),
+  finalEnergyEntry('CCSD(T)', 'CCSD(T)', ['E\\(CCSD\\(T\\)\\)', 'CCSD\\(T\\)']),
+  finalEnergyEntry('QCISD(T)', 'QCISD(T)', ['QCISD\\(T\\)']),
+  finalEnergyEntry('E(CBS-QB3)', 'CBS-QB3', ['E\\(CBS-QB3\\)']),
+  finalEnergyEntry('CBS-QB3 (0 K)', 'CBS-QB3', [compositeZeroKelvin('CBS-QB3')]),
+  finalEnergyEntry('E(CBS-4M)', 'CBS-4M', ['E\\(CBS-4M\\)']),
+  finalEnergyEntry('CBS-4M (0 K)', 'CBS-4M', [compositeZeroKelvin('CBS-4M')]),
+  finalEnergyEntry('E(CBS-APNO)', 'CBS-APNO', ['E\\(CBS-APNO\\)']),
+  finalEnergyEntry('CBS-APNO (0 K)', 'CBS-APNO', [compositeZeroKelvin('CBS-APNO')]),
+  finalEnergyEntry('G3(0 K)', 'G3', [compositeZeroKelvin('G3')]),
+  finalEnergyEntry('G3MP2(0 K)', 'G3MP2', [compositeZeroKelvin('G3MP2')]),
+  finalEnergyEntry('G3B3(0 K)', 'G3B3', [compositeZeroKelvin('G3B3')]),
+  finalEnergyEntry('G3MP2B3(0 K)', 'G3MP2B3', [compositeZeroKelvin('G3MP2B3')]),
+  finalEnergyEntry('G4(0 K)', 'G4', [compositeZeroKelvin('G4')]),
+  finalEnergyEntry('G4MP2(0 K)', 'G4MP2', [compositeZeroKelvin('G4MP2')]),
+  finalEnergyEntry('W1BD (0 K)', 'W1BD', [compositeZeroKelvin('W1BD')]),
+  finalEnergyEntry('W1BD', 'W1BD', ['W1BD']),
+  finalEnergyEntry('E(B2PLYP)', 'B2PLYP', ['E\\(B2PLYP\\)']),
+  finalEnergyEntry('E(B2PLYPD3)', 'B2PLYP', ['E\\(B2PLYPD3\\)']),
+  finalEnergyEntry('E(mPW2PLYP)', 'mPW2PLYP', ['E\\(mPW2PLYP\\)']),
+  finalEnergyEntry('E(DSDPBEP86)', 'DSDPBEP86', ['E\\(DSDPBEP86\\)']),
+];
+
+function compositeZeroKelvin(method) {
+  return `${method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(\\s*0\\s*K\\s*\\)`;
+}
+
+function finalEnergyEntry(label, family, bodies) {
+  return {
+    label,
+    family,
+    patterns: bodies.map(body => new RegExp(`(?:^|[\\s,])${body}\\s*=\\s*(${NUMBER_PATTERN})`, 'i')),
+  };
+}
+
+/** Method family for a stored final-energy label, or null when unrecognized. */
+export function finalEnergyLabelFamily(label) {
+  if (typeof label !== 'string') return null;
+  const needle = label.trim().toUpperCase();
+  const entry = FINAL_ENERGY_PATTERNS.find(item => item.label.toUpperCase() === needle);
+  return entry ? entry.family : null;
+}
+
 function toNumber(token) {
   return Number(token.replace(/[dD]/g, 'E'));
+}
+
+function makeFinalEnergy() {
+  return { valueHartree: null, label: null, line: null, evidence: null };
 }
 
 function makeThermochemistry() {
@@ -98,6 +170,7 @@ function makeSection(index) {
       hasRecord: false,
     },
     thermochemistry: makeThermochemistry(),
+    finalEnergy: makeFinalEnergy(),
     diagnostics: [],
     omittedDiagnostics: 0,
     hasContent: false,
@@ -130,6 +203,7 @@ function publicSection(section) {
       evidence: section.thermochemistry.evidence,
       failure: section.thermochemistry.failure ? { ...section.thermochemistry.failure } : null,
     },
+    finalEnergy: { ...section.finalEnergy },
     diagnostics: section.diagnostics.map(item => ({ ...item })),
     omittedDiagnostics: section.omittedDiagnostics,
   };
@@ -215,6 +289,7 @@ export class GaussianLogParser {
     }
 
     this.recordThermochemistry(line);
+    this.recordFinalEnergy(line);
 
     const isGaussianLicenseNotice = /\bWarning\s+--\s+This program may not be used in any manner\b/i.test(line);
     if (!isGaussianLicenseNotice
@@ -260,6 +335,29 @@ export class GaussianLogParser {
 
     if (!block.failure && THERMOCHEMISTRY_FAILURE_RE.test(line)) {
       block.failure = { line: this.lineNumber, evidence: clipLine(line) };
+    }
+  }
+
+  /**
+   * Keep the last recognized post-SCF/composite energy line in the section.
+   * `SCF Done` stays the reference energy; it is never promoted to a method
+   * energy. A section that only ran an SCF therefore reports `finalEnergy: null`.
+   */
+  recordFinalEnergy(line) {
+    for (const entry of FINAL_ENERGY_PATTERNS) {
+      for (const pattern of entry.patterns) {
+        const match = line.match(pattern);
+        if (!match) continue;
+        const value = toNumber(match[1]);
+        if (!Number.isFinite(value)) return;
+        this.current.finalEnergy = {
+          valueHartree: value,
+          label: entry.label,
+          line: this.lineNumber,
+          evidence: clipLine(line),
+        };
+        return;
+      }
     }
   }
 

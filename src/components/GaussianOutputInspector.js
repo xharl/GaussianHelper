@@ -2,7 +2,8 @@ import { parseGaussianLogStream, parseGaussianLogText } from '../parsers/gaussia
 
 const CSV_HEADERS = [
   'filename', 'section', 'status', 'termination_line', 'termination_text', 'scf_status', 'scf_method',
-  'scf_energy_hartree', 'scf_records', 'scf_line', 'scf_evidence', 'optimization_status',
+  'scf_energy_hartree', 'reference_energy_hartree', 'method_energy_hartree', 'method_energy_label',
+  'scf_records', 'scf_line', 'scf_evidence', 'optimization_status',
   'optimization_line', 'optimization_evidence', 'frequency_count', 'imaginary_count',
   'most_negative_frequency_cm-1', 'imaginary_frequencies_cm-1', 'omitted_imaginary_values',
   'frequency_line', 'frequency_evidence', 'thermochemistry_zero_point_hartree',
@@ -46,6 +47,9 @@ export function formatGaussianResultsCsv(results) {
         section.scf.status,
         section.scf.method ?? '',
         section.scf.energyHartree,
+        section.scf.energyHartree ?? '',
+        section.finalEnergy?.valueHartree ?? '',
+        section.finalEnergy?.label ?? '',
         section.scf.records,
         section.scf.line ?? '',
         section.scf.evidence ?? '',
@@ -277,8 +281,17 @@ export class GaussianOutputInspector {
 
   renderSection(section) {
     const scfEnergy = formatEnergy(section.scf.energyHartree);
+    const finalEnergy = section.finalEnergy;
+    const hasFinalEnergy = Number.isFinite(finalEnergy?.valueHartree);
+    const methodEnergyName = finalEnergy?.label ? `Method energy (${finalEnergy.label})` : 'Method energy';
+    const methodEnergy = hasFinalEnergy
+      ? `${finalEnergy.valueHartree} Hartree${finalEnergy.line ? ` · line ${finalEnergy.line}` : ''}`
+      : 'Not found — this section reports only the SCF reference';
     const scfEvidence = section.scf.evidence
       ? `<details class="inspector-evidence"><summary>SCF source, line ${section.scf.line}</summary><code>${escapeHtml(section.scf.evidence)}</code></details>`
+      : '';
+    const finalEnergyEvidence = hasFinalEnergy && finalEnergy.evidence
+      ? `<details class="inspector-evidence"><summary>Method energy source, line ${finalEnergy.line}</summary><code>${escapeHtml(finalEnergy.evidence)}</code></details>`
       : '';
     const optEvidence = section.optimization.evidence
       ? `<details class="inspector-evidence"><summary>Optimization source, line ${section.optimization.line}</summary><code>${escapeHtml(section.optimization.evidence)}</code></details>`
@@ -307,13 +320,15 @@ export class GaussianOutputInspector {
       <details class="inspector-section" open>
         <summary>Section ${section.index} · ${statusLabel(section.status)}</summary>
         <div class="inspector-metrics">
-          <div><strong>SCF:</strong> ${escapeHtml(section.scf.status)} · ${escapeHtml(section.scf.method || 'method not found')} · ${escapeHtml(scfEnergy)}${section.scf.line ? ` · line ${section.scf.line}` : ''}</div>
+          <div><strong>SCF:</strong> ${escapeHtml(section.scf.status)} · ${escapeHtml(section.scf.method || 'method not found')}${section.scf.line ? ` · line ${section.scf.line}` : ''}</div>
+          <div><strong>Reference energy (SCF):</strong> ${escapeHtml(scfEnergy)}</div>
+          <div><strong>${escapeHtml(methodEnergyName)}:</strong> ${escapeHtml(methodEnergy)}</div>
           <div><strong>Optimization:</strong> ${escapeHtml(section.optimization.status)}${section.optimization.line ? ` · line ${section.optimization.line}` : ''}</div>
           <div><strong>Frequencies:</strong> ${escapeHtml(formatFrequency(section))}${escapeHtml(imaginaryValueText)}</div>
           ${renderThermochemistry(section)}
           ${termination}
         </div>
-        ${scfEvidence}${optEvidence}${freqEvidence}${thermoEvidence}${thermoFailure}${diagnostics}
+        ${scfEvidence}${finalEnergyEvidence}${optEvidence}${freqEvidence}${thermoEvidence}${thermoFailure}${diagnostics}
       </details>
     `;
   }
