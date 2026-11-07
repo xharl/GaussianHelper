@@ -4,7 +4,7 @@
  */
 
 import { generateGJF } from '../generators/gjfGenerator.js';
-import { validateInputCompleteness, getTheoryRecommendations } from '../utils/validation.js';
+import { validateInputCompleteness, lintTheoryLevel } from '../utils/validation.js';
 
 export class GJFPreview {
   /**
@@ -73,8 +73,8 @@ export class GJFPreview {
       const config = this.buildConfig(params, molecule);
       this.currentGJF = generateGJF(config);
       const validation = validateInputCompleteness(config);
-      const recommendations = getTheoryRecommendations(config);
-      this.renderCode(this.currentGJF, validation, recommendations);
+      const lint = lintTheoryLevel(config);
+      this.renderCode(this.currentGJF, validation, lint);
     } catch (err) {
       this.currentGJF = '';
       const codeBody = this.container.querySelector('#gjf-code');
@@ -132,9 +132,15 @@ export class GJFPreview {
   /**
    * Render the GJF content with syntax highlighting
    */
-  renderCode(gjf, validation, recommendations = []) {
+  renderCode(gjf, validation, lint = null) {
     const codeBody = this.container.querySelector('#gjf-code');
     const warningsContainer = this.container.querySelector('#gjf-warnings');
+
+    // Accept the legacy string[] form too, so any external caller keeps working.
+    const issues = Array.isArray(lint)
+      ? lint.map((message) => ({ id: 'legacy', severity: 'info', message }))
+      : (lint?.issues || []);
+    const estimate = Array.isArray(lint) ? null : (lint?.estimate || null);
 
     if (!gjf || gjf.trim() === '') {
       if (codeBody) codeBody.innerHTML = '<div class="code-placeholder"><span>Configure parameters and load a molecule to generate .gjf</span></div>';
@@ -160,17 +166,12 @@ export class GJFPreview {
       `;
     }
 
-    if (recommendations && recommendations.length > 0) {
-      htmlContent += `
-        <div class="form-recommendation" style="margin: 12px 16px 0 16px; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid rgba(59, 130, 246, 0.2); background: rgba(59, 130, 246, 0.05);">
-          <div style="font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; color: var(--info);">
-            <span class="info-icon">💡</span> Theoretical Recommendations
-          </div>
-          <ul style="margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 11px; line-height: 1.4;">
-            ${recommendations.map(rec => `<li style="margin-bottom: 2px;">${this.escapeHtml(rec)}</li>`).join('')}
-          </ul>
-        </div>
-      `;
+    if (issues.length > 0) {
+      htmlContent += this.renderLintPanel(issues);
+    }
+
+    if (estimate) {
+      htmlContent += this.renderCostEstimate(estimate);
     }
 
     if (htmlContent) {
@@ -193,6 +194,90 @@ export class GJFPreview {
     }).join('');
 
     codeBody.innerHTML = `<div class="code-lines">${highlighted}</div>`;
+  }
+
+  /**
+   * Render the severity-tagged lint list (warnings amber, informational notes
+   * blue). All message text is escaped.
+   */
+  renderLintPanel(issues) {
+    if (!issues || issues.length === 0) return '';
+
+    const warningCount = issues.filter((issue) => issue.severity === 'warning').length;
+    const infoCount = issues.length - warningCount;
+    const accent = warningCount > 0 ? 'var(--warning)' : 'var(--info)';
+    const border = warningCount > 0 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(59, 130, 246, 0.2)';
+    const background = warningCount > 0 ? 'rgba(245, 158, 11, 0.05)' : 'rgba(59, 130, 246, 0.05)';
+    const warningLabel = `${warningCount} warning${warningCount === 1 ? '' : 's'}`;
+    const infoLabel = `${infoCount} note${infoCount === 1 ? '' : 's'}`;
+
+    return `
+      <div class="form-recommendation" data-lint="preflight" style="margin: 12px 16px 0 16px; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid ${border}; background: ${background};">
+        <div style="font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; color: ${accent};">
+          <span class="info-icon">🧪</span> Pre-flight Chemistry Lint
+          <span style="font-weight: 400; color: var(--text-tertiary); font-size: 11px;">${warningLabel} · ${infoLabel}</span>
+        </div>
+        <ul style="margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 11px; line-height: 1.45;">
+          ${issues.map((issue) => `
+            <li style="margin-bottom: 3px;">
+              <span style="font-weight: 600; color: ${issue.severity === 'warning' ? 'var(--warning)' : 'var(--info)'};">${issue.severity === 'warning' ? 'Warning' : 'Info'}:</span>
+              ${this.escapeHtml(issue.message)}
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  /**
+   * Render the labelled heuristic cost panel. Never present as a benchmark:
+   * the headline label and disclaimer are fixed text, and every displayed
+   * number is rounded to one significant figure by the estimator.
+   */
+  renderCostEstimate(estimate) {
+    const low = this.formatHours(estimate.coreHours.low);
+    const high = this.formatHours(estimate.coreHours.high);
+    const coreRange = low === high ? low : `${low}–${high}`;
+    let wall = '';
+    if (estimate.wallHours) {
+      const wallLow = this.formatHours(estimate.wallHours.low);
+      const wallHigh = this.formatHours(estimate.wallHours.high);
+      const wallRange = wallLow === wallHigh ? wallLow : `${wallLow}–${wallHigh}`;
+      const coreWord = estimate.cores === 1 ? 'core' : 'cores';
+      wall = `
+        <div style="margin-top: 4px; color: var(--text-secondary); font-size: 11px;">
+          On ${estimate.cores} ${coreWord}: ≈ ${wallRange} hours wall-clock if scaling were ideal — real parallel efficiency is lower.
+        </div>
+      `;
+    }
+
+    return `
+      <div class="form-recommendation" data-lint="cost-estimate" style="margin: 12px 16px 0 16px; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid rgba(148, 163, 184, 0.25); background: rgba(148, 163, 184, 0.06);">
+        <div style="font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; color: var(--text-primary);">
+          <span class="info-icon">⏱</span> Cost Estimate (heuristic)
+        </div>
+        <div style="font-size: 12px; color: var(--text-primary); margin-bottom: 4px;">
+          ≈ <strong>${coreRange} core-hours</strong>
+          <span style="color: var(--text-tertiary); font-size: 11px;">(one significant figure)</span>
+        </div>
+        <div style="font-size: 11px; color: var(--warning); margin-bottom: 6px;">
+          ${this.escapeHtml(estimate.disclaimer)}
+        </div>
+        ${wall}
+        <div style="margin-top: 6px; font-weight: 600; color: var(--text-secondary); font-size: 11px;">Assumptions behind the estimate</div>
+        <ul style="margin: 2px 0 0 0; padding-left: 18px; color: var(--text-secondary); font-size: 11px; line-height: 1.45;">
+          ${estimate.assumptions.map((assumption) => `<li style="margin-bottom: 2px;">${this.escapeHtml(assumption)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  /** Format a core-hour value without inventing precision. */
+  formatHours(value) {
+    if (!Number.isFinite(value)) return '?';
+    if (value > 0 && value < 0.1) return String(value);
+    if (value >= 1000) return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    return String(value);
   }
 
   /**
