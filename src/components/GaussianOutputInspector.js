@@ -101,6 +101,39 @@ function formatFrequency(section) {
   return `${frequencies.count} modes · ${imaginary}${lowest}${line}`;
 }
 
+/**
+ * Verdict for a negative mode against a saddle threshold, e.g.
+ * `1 negative mode at -4.2 cm-1 — below the 50 cm-1 saddle threshold`.
+ * Returns an empty string when no floor applies, the section has no negative
+ * mode, or the parsed record has no magnitude to judge.
+ */
+export function formatImaginaryThreshold(section, minImaginaryMagnitude) {
+  const frequencies = section?.frequencies;
+  if (!frequencies || !Number.isFinite(minImaginaryMagnitude) || minImaginaryMagnitude < 0) return '';
+  const count = frequencies.imaginaryCount;
+  if (!Number.isInteger(count) || count === 0) return '';
+  const values = Array.isArray(frequencies.imaginaryValues)
+    ? frequencies.imaginaryValues.filter(value => Number.isFinite(value) && value < 0)
+    : [];
+  // With a complete list, the value closest to zero is the weakest mode. With a
+  // capped list, every stored mode is still inspectable and minImaginary covers
+  // the omitted entries, so prefer whichever value actually violates the floor.
+  let weakest = values.length
+    ? values.reduce((current, value) => (value > current ? value : current), values[0])
+    : null;
+  const minImaginary = Number.isFinite(frequencies.minImaginary) ? frequencies.minImaginary : null;
+  if ((weakest === null || Math.abs(weakest) >= minImaginaryMagnitude)
+    && minImaginary !== null && Math.abs(minImaginary) < minImaginaryMagnitude) {
+    weakest = minImaginary;
+  } else if (weakest === null) {
+    weakest = minImaginary;
+  }
+  if (weakest === null) return '';
+  const modes = count === 1 ? '1 negative mode' : `${count} negative modes`;
+  const verdict = Math.abs(weakest) < minImaginaryMagnitude ? 'below' : 'meets';
+  return `${modes} at ${weakest} cm-1 — ${verdict} the ${minImaginaryMagnitude} cm-1 saddle threshold`;
+}
+
 function formatEnergy(energy) {
   if (!Number.isFinite(energy)) return 'Not found';
   return `${energy} Hartree`;
@@ -363,6 +396,7 @@ export class GaussianOutputInspector {
     const imaginaryValueText = imaginaryValues.length
       ? ` · values ${imaginaryValues.join(', ')} cm⁻¹${section.frequencies.omittedImaginaryValues ? ` (first ${imaginaryValues.length} shown; ${section.frequencies.omittedImaginaryValues} omitted)` : ''}`
       : '';
+    const thresholdNote = formatImaginaryThreshold(section, options.minImaginaryMagnitude);
     const diagnostics = section.diagnostics.length
       ? `<details class="inspector-diagnostics"><summary>Warnings / errors (${section.diagnostics.length}${section.omittedDiagnostics ? ` shown, ${section.omittedDiagnostics} omitted` : ''})</summary><ul>${section.diagnostics.map(item => `<li><strong>${escapeHtml(item.kind)} · line ${item.line}:</strong> <code>${escapeHtml(item.text)}</code></li>`).join('')}</ul></details>`
       : '<div class="inspector-no-diagnostics">No matching warning/error lines found; this is not a correctness guarantee.</div>';
@@ -377,6 +411,7 @@ export class GaussianOutputInspector {
           ${renderRouteEcho(section, options)}
           <div><strong>Optimization:</strong> ${escapeHtml(section.optimization.status)}${section.optimization.line ? ` · line ${section.optimization.line}` : ''}</div>
           <div><strong>Frequencies:</strong> ${escapeHtml(formatFrequency(section))}${escapeHtml(imaginaryValueText)}</div>
+          ${thresholdNote ? `<div><strong>Saddle threshold:</strong> ${escapeHtml(thresholdNote)}</div>` : ''}
           ${renderThermochemistry(section)}
           ${termination}
         </div>

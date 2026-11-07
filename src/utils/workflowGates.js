@@ -4,6 +4,14 @@ import { jobTypes } from '../data/keywords.js';
 import { finalEnergyLabelFamily, normalizeRouteTokens } from '../parsers/gaussianLogParser.js';
 
 /**
+ * Default floor (cm-1) for the weakest imaginary mode of a genuine saddle
+ * point. A negative frequency of only a few cm-1 is typically a numerical or
+ * rotational artefact, not the reaction coordinate a TS search is meant to
+ * find. `null` disables the magnitude floor and keeps the count-only check.
+ */
+export const DEFAULT_MIN_IMAGINARY_MAGNITUDE = 50;
+
+/**
  * Method rungs whose reported answer is a post-SCF/composite step, not the
  * `SCF Done` reference. `SCF Done` is still the reference energy for these jobs,
  * which is why the gate exists rather than treating the SCF record as the answer.
@@ -204,6 +212,52 @@ function evaluateRouteEcho(task, section) {
   );
 }
 
+/**
+ * Judge the magnitude of every imaginary mode against a saddle threshold.
+ *
+ * `imaginaryValues` stores each negative frequency up to the parser's 100-entry
+ * cap, while `minImaginary` is updated for *every* negative frequency before
+ * that cap is applied. When the stored list is complete, the mode closest to
+ * zero has the smallest magnitude and is therefore the binding constraint for
+ * a per-mode floor. When the list is truncated, every stored mode is still
+ * checked, and `minImaginary` additionally proves whether the most negative
+ * mode clears the floor; the omitted entries have no individual magnitudes in
+ * the parsed record, so they are represented only by `minImaginary`.
+ *
+ * @returns {{ status: 'pass'|'fail'|'unknown', value: number|null }}
+ */
+function checkImaginaryMagnitude(frequencies, floor) {
+  if (floor === null) return { status: 'pass', value: null };
+  if (!Number.isFinite(floor) || floor < 0) return { status: 'unknown', value: null };
+  if (floor === 0) return { status: 'pass', value: null };
+
+  const values = Array.isArray(frequencies?.imaginaryValues)
+    ? frequencies.imaginaryValues.filter(value => Number.isFinite(value) && value < 0)
+    : [];
+  const omitted = Number.isInteger(frequencies?.omittedImaginaryValues)
+    ? frequencies.omittedImaginaryValues
+    : 0;
+  const minImaginary = Number.isFinite(frequencies?.minImaginary) ? frequencies.minImaginary : null;
+
+  // The largest (least negative) stored value has the smallest magnitude.
+  const weakestStored = values.length
+    ? values.reduce((weakest, value) => (value > weakest ? value : weakest), values[0])
+    : null;
+
+  if (weakestStored !== null && Math.abs(weakestStored) < floor) {
+    return { status: 'fail', value: weakestStored };
+  }
+  if (minImaginary !== null && Math.abs(minImaginary) < floor) {
+    return { status: 'fail', value: minImaginary };
+  }
+  if (weakestStored === null && minImaginary === null) return { status: 'unknown', value: null };
+  // With omitted values there is no per-mode magnitude record, but the parser
+  // guarantees minImaginary covers all of them; if it is absent the evidence is
+  // incomplete rather than a pass.
+  if (omitted > 0 && minImaginary === null) return { status: 'unknown', value: null };
+  return { status: 'pass', value: null };
+}
+
 export function evaluateWorkflowOutput(task, section) {
   if (!task || !task.gates || !section) throw new TypeError('A workflow task and parsed output section are required.');
   const gates = [];
@@ -291,16 +345,33 @@ export function evaluateWorkflowOutput(task, section) {
   }
 
   if (task.gates.expectedImaginaryModes !== null && task.gates.expectedImaginaryModes !== undefined) {
-    const frequencyCount = section.frequencies?.count;
-    const modeCount = section.frequencies?.imaginaryCount;
-    const result = !Number.isInteger(frequencyCount) || !Number.isInteger(modeCount) ? 'unknown'
-      : modeCount === task.gates.expectedImaginaryModes ? 'pass' : 'fail';
+    const frequencies = section.frequencies;
+    const frequencyCount = frequencies?.count;
+    const modeCount = frequencies?.imaginaryCount;
+    let result;
+    let evidence = frequencies?.evidence ?? null;
+    if (!Number.isInteger(frequencyCount) || !Number.isInteger(modeCount)) {
+      result = 'unknown';
+    } else if (modeCount !== task.gates.expectedImaginaryModes) {
+      result = 'fail';
+    } else if (modeCount === 0) {
+      result = 'pass';
+    } else {
+      // Older in-memory tasks may predate the floor; the schema default still
+      // applies. `null` explicitly disables only the magnitude check.
+      const floor = task.gates.minImaginaryMagnitude === undefined
+        ? DEFAULT_MIN_IMAGINARY_MAGNITUDE
+        : task.gates.minImaginaryMagnitude;
+      const magnitude = checkImaginaryMagnitude(frequencies, floor);
+      result = magnitude.status;
+      if (result === 'fail') evidence = `${magnitude.value} cm-1 < ${floor} cm-1`;
+    }
     gates.push(makeGate(
       'Imaginary-mode count',
       true,
       result,
-      section.frequencies?.line ?? null,
-      section.frequencies?.evidence ?? null,
+      frequencies?.line ?? null,
+      evidence,
     ));
   }
 

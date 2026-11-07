@@ -1,4 +1,8 @@
-import { evaluateWorkflowOutput, methodRequiresFinalEnergy } from './workflowGates.js';
+import {
+  DEFAULT_MIN_IMAGINARY_MAGNITUDE,
+  evaluateWorkflowOutput,
+  methodRequiresFinalEnergy,
+} from './workflowGates.js';
 import { validateInputCompleteness } from './validation.js';
 import {
   MAX_ROUTE_CHECKPOINT_CHARS,
@@ -11,12 +15,19 @@ import { normalizeConformerMetadata, validateConformerMetadata } from './conform
 export const WORKFLOW_SCHEMA_VERSION = 1;
 export const MAX_WORKFLOW_TASKS = 100;
 export const MAX_WORKFLOW_PROJECT_BYTES = 5 * 1024 * 1024;
+/**
+ * Sanity bound for the imaginary-mode magnitude floor. Real molecular
+ * vibrations top out around 4500 cm-1, so a floor above 10000 cm-1 is not a
+ * meaningful saddle criterion and is treated as a corrupt project value.
+ */
+export const MAX_MIN_IMAGINARY_MAGNITUDE = 10000;
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,80}$/;
 const SAFE_INPUT_NAME = /^[A-Za-z0-9][A-Za-z0-9_. -]{0,126}\.gjf$/i;
 const SAFE_OUTPUT_NAME = /^[A-Za-z0-9][A-Za-z0-9_. -]{0,126}\.(?:log|out)$/i;
 const SAFE_CHECKPOINT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,126}\.chk$/i;
 const ATTEMPT_OUTCOMES = new Set(['pass', 'fail', 'unknown']);
+const TRANSITION_STATE_ROUTE_RE = /\bOpt\s*=\s*(?:\([^)]*\b(?:TS|QST2|QST3)\b|(?:TS|QST2|QST3)\b)/i;
 
 export function createWorkflowId(prefix = 'task') {
   const randomId = globalThis.crypto?.randomUUID?.();
@@ -34,6 +45,29 @@ export function createWorkflowProject(name = 'Untitled Gaussian project') {
     updatedAt: now,
     tasks: [],
   };
+}
+
+/**
+ * Whether the route asks Gaussian for a transition-state search. `Opt=TS`,
+ * `Opt=(TS,…)`, `Opt=QST2`/`Opt=(QST2,…)` and `Opt=QST3`/`Opt=(QST3,…)` all
+ * target a saddle, so they must not inherit the minimum's "zero imaginary
+ * modes" default.
+ */
+export function isTransitionStateRoute(config) {
+  const text = `${config?.route?.jobType || ''} ${config?.route?.custom || ''}`;
+  return TRANSITION_STATE_ROUTE_RE.test(text);
+}
+
+/**
+ * Route-implied imaginary-mode expectation. A `Freq` job that is not a
+ * TS/QST2/QST3 search is a minimum (or a minimum optimization followed by a
+ * frequency check), so it expects zero imaginary modes. A saddle search has no
+ * safe default and stays `null` (user decides); non-Freq routes have no
+ * frequency check at all.
+ */
+export function deriveExpectedImaginaryModes(config) {
+  if (!routeHasKeyword(config, 'Freq')) return null;
+  return isTransitionStateRoute(config) ? null : 0;
 }
 
 export function createWorkflowTask(config, options = {}) {
@@ -67,7 +101,8 @@ export function createWorkflowTask(config, options = {}) {
       requireFrequencyRecord: /(?:^|\s)Freq(?:\b|=)/i.test(routeText),
       requireThermochemistry: /(?:^|\s)Freq(?:\b|=)/i.test(routeText),
       requireFinalEnergy: methodRequiresFinalEnergy(snapshot.route.method),
-      expectedImaginaryModes: null,
+      expectedImaginaryModes: deriveExpectedImaginaryModes(snapshot),
+      minImaginaryMagnitude: DEFAULT_MIN_IMAGINARY_MAGNITUDE,
       ...options.gates,
       // Always required; not user-configurable in v1. Declared after the spread so a
       // caller-supplied `false` cannot weaken the gate (validateWorkflowProject enforces this too).
@@ -206,10 +241,16 @@ export function validateWorkflowProject(project) {
       // Older v1 project files predate this gate; a missing flag is derived from the method on load.
       || (task.gates.requireFinalEnergy !== undefined
         && typeof task.gates.requireFinalEnergy !== 'boolean')
+      // Older v1 project files predate this gate; a missing value is derived from the route on load.
       || (task.gates.expectedImaginaryModes !== null
+        && task.gates.expectedImaginaryModes !== undefined
         && (!Number.isInteger(task.gates.expectedImaginaryModes) || task.gates.expectedImaginaryModes < 0))) {
       errors.push(`Task "${task.id || '?'}" has invalid validation gates.`);
     } else {
+      if (task.gates.minImaginaryMagnitude !== undefined && task.gates.minImaginaryMagnitude !== null
+        && !isValidMinImaginaryMagnitude(task.gates.minImaginaryMagnitude)) {
+        errors.push(`Task "${task.id}" minImaginaryMagnitude must be null or a finite number from 0 to ${MAX_MIN_IMAGINARY_MAGNITUDE} cm-1.`);
+      }
       if (routeHasKeyword(task.config, 'Opt') && !task.gates.requireOptimizationComplete) {
         errors.push(`Task "${task.id}" Opt route requires the optimization gate.`);
       }
@@ -558,7 +599,18 @@ function sanitizeWorkflowProject(project) {
         requireFrequencyRecord: task.gates.requireFrequencyRecord,
         requireThermochemistry: task.gates.requireThermochemistry ?? routeHasKeyword(task.config, 'Freq'),
         requireFinalEnergy: task.gates.requireFinalEnergy ?? methodRequiresFinalEnergy(task.config?.route?.method),
-        expectedImaginaryModes: task.gates.expectedImaginaryModes,
+        // Files written before this gate existed have no minImaginaryMagnitude
+        // key. Their `expectedImaginaryModes: null` was the old app default, not
+        // necessarily a user's explicit "no check", so derive the route default
+        // for those legacy files. A file that already stores a threshold keeps
+        // an explicit null.
+        expectedImaginaryModes: task.gates.expectedImaginaryModes === undefined
+          || (task.gates.expectedImaginaryModes === null && task.gates.minImaginaryMagnitude === undefined)
+          ? deriveExpectedImaginaryModes(task.config)
+          : task.gates.expectedImaginaryModes,
+        minImaginaryMagnitude: task.gates.minImaginaryMagnitude === undefined
+          ? DEFAULT_MIN_IMAGINARY_MAGNITUDE
+          : task.gates.minImaginaryMagnitude,
       },
       activeAttemptId: task.activeAttemptId || null,
       lastExportedAt: task.lastExportedAt || null,
@@ -689,6 +741,11 @@ function validateGjfConfigText(task, errors) {
 function routeHasKeyword(config, keyword) {
   const routeText = `${config?.route?.jobType || ''} ${config?.route?.custom || ''}`;
   return new RegExp(`(?:^|\\s)${keyword}(?:\\b|=)`, 'i').test(routeText);
+}
+
+function isValidMinImaginaryMagnitude(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    && value >= 0 && value <= MAX_MIN_IMAGINARY_MAGNITUDE;
 }
 
 function isRecord(value) {
