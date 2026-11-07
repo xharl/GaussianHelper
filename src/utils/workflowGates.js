@@ -1,5 +1,7 @@
 import { getMethodByKeyword } from '../data/methods.js';
-import { finalEnergyLabelFamily } from '../parsers/gaussianLogParser.js';
+import { basisSets } from '../data/basisSets.js';
+import { jobTypes } from '../data/keywords.js';
+import { finalEnergyLabelFamily, normalizeRouteTokens } from '../parsers/gaussianLogParser.js';
 
 /**
  * Method rungs whose reported answer is a post-SCF/composite step, not the
@@ -93,6 +95,115 @@ function findMethodStepFailure(section) {
     && METHOD_STEP_FAILURE_RE.test(item.text || '')) || null;
 }
 
+/**
+ * Route tokens that do not describe the calculation and are therefore harmless
+ * when one side of the comparison has them: `SP` is Gaussian's default job type,
+ * `TEST` stops before the first SCF cycle, and `MAXDISK` only sets a scratch
+ * limit. They never satisfy a missing expected token.
+ */
+const NOOP_ROUTE_TOKENS = new Set(['SP', 'TEST', 'MAXDISK']);
+
+/** Keywords known to select a functional/method, used to spot a conflicting echo. */
+const BASIS_KEYWORDS = new Set([
+  ...basisSets.map(entry => String(entry.keyword || '').trim().toUpperCase()).filter(Boolean),
+  // Gen/GenECP are route-level basis modes rather than catalogue entries.
+  'GEN',
+  'GENECP',
+]);
+const JOB_TYPE_KEYWORDS = new Set(
+  jobTypes.flatMap(entry => normalizeRouteTokens(entry.keyword)).filter(token => !NOOP_ROUTE_TOKENS.has(token)),
+);
+
+function routeTokenKind(token) {
+  if (getMethodByKeyword(token)) return 'method';
+  if (BASIS_KEYWORDS.has(token)) return 'basis';
+  if (JOB_TYPE_KEYWORDS.has(token)) return 'job type';
+  return null;
+}
+
+/**
+ * Tokens a task's configured route must produce in the log's route echo.
+ *
+ * Derived from `config.route` rather than from `buildRouteSection()` so the
+ * check still works for imported projects whose route predates a generator
+ * change. GenECP jobs expect `METHOD` + `GENECP`; the per-element basis
+ * keywords live in the molecule specification, not in the route section, so
+ * they are intentionally not expected here.
+ *
+ * @returns {string[]|null} Tokens, or null when the task has no usable route.
+ */
+export function expectedRouteTokens(route) {
+  if (!route || typeof route !== 'object') return null;
+  const method = typeof route.method === 'string' ? route.method.trim() : '';
+  if (!method) return null;
+  const parts = [method];
+  const definition = getMethodByKeyword(method);
+  const hasBasis = typeof route.basisSet === 'string' && route.basisSet.trim().length > 0;
+  const genecp = String(route.basisMode || '').trim().toLowerCase() === 'genecp';
+  // GenECP always emits `Method/GenECP`, even when the method is not in the
+  // local registry (an unknown/renamed functional still had a basis mode).
+  const needsBasis = genecp || (definition ? definition.needsBasis !== false : hasBasis);
+  if (needsBasis) parts.push(genecp ? 'GenECP' : route.basisSet || '');
+  for (const key of ['jobType', 'scf', 'grid', 'dispersion', 'solvation', 'pop', 'custom']) {
+    const value = route[key];
+    if (typeof value === 'string' && value.trim()) parts.push(value.trim());
+  }
+  return normalizeRouteTokens(parts.join(' ')).filter(token => !NOOP_ROUTE_TOKENS.has(token));
+}
+
+function clipGateEvidence(text) {
+  const value = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!value) return null;
+  return value.length <= 300 ? value : `${value.slice(0, 299)}…`;
+}
+
+function evaluateRouteEcho(task, section) {
+  const echo = section.routeEcho;
+  // A hand-built or pre-route-echo saved section has no captured evidence; do
+  // not retroactively invalidate verdicts that were computed without it.
+  if (!echo || typeof echo !== 'object') return null;
+  const expected = expectedRouteTokens(task.config?.route);
+  if (!expected) return null;
+
+  const echoed = Array.isArray(echo.tokens) ? echo.tokens : [];
+  const checkpoints = Array.isArray(echo.checkpoints) ? echo.checkpoints : [];
+  const checkpointNote = checkpoints.length ? `Echoed checkpoint: ${checkpoints.join(', ')}.` : '';
+  if (echoed.length === 0) {
+    // No echo means the comparison cannot be made. Never report `pass`.
+    return makeGate('Route echo matches', true, 'unknown', null, null);
+  }
+
+  const missing = expected.filter(token => !echoed.includes(token));
+  const unexpected = echoed.filter(token => !expected.includes(token) && !NOOP_ROUTE_TOKENS.has(token));
+  const conflicts = unexpected
+    .map(token => ({ token, kind: routeTokenKind(token) }))
+    .filter(entry => entry.kind);
+  if (missing.length === 0 && conflicts.length === 0) {
+    return makeGate(
+      'Route echo matches',
+      true,
+      'pass',
+      echo.line ?? null,
+      clipGateEvidence([echo.evidence, checkpointNote].filter(Boolean).join(' · ')),
+    );
+  }
+
+  const parts = [];
+  if (missing.length) parts.push(`Missing route tokens: ${missing.join(', ')}.`);
+  if (conflicts.length) {
+    parts.push(`Unexpected ${conflicts.map(entry => `${entry.kind} keyword ${entry.token}`).join(', ')}.`);
+  } else if (unexpected.length) {
+    parts.push(`Unexpected route tokens: ${unexpected.join(', ')}.`);
+  }
+  return makeGate(
+    'Route echo matches',
+    true,
+    'fail',
+    echo.line ?? null,
+    clipGateEvidence([parts.join(' '), checkpointNote].filter(Boolean).join(' ')),
+  );
+}
+
 export function evaluateWorkflowOutput(task, section) {
   if (!task || !task.gates || !section) throw new TypeError('A workflow task and parsed output section are required.');
   const gates = [];
@@ -118,6 +229,9 @@ export function evaluateWorkflowOutput(task, section) {
     section.scf?.line ?? null,
     section.scf?.evidence ?? null,
   ));
+
+  const routeEchoGate = evaluateRouteEcho(task, section);
+  if (routeEchoGate) gates.push(routeEchoGate);
 
   if (task.gates.requireFinalEnergy === true) {
     const finalEnergy = section.finalEnergy;

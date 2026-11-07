@@ -126,6 +126,57 @@ function renderThermochemistry(section) {
   return rows.join('');
 }
 
+/**
+ * Route-echo summary for one section. The echoed `%Chk`/`%OldChk` filename is
+ * shown explicitly: a route can match while a stale checkpoint silently loads a
+ * different molecule.
+ *
+ * `options.expectedRouteTokens` (optional) adds a missing/unexpected diff, for
+ * callers that already know the configured route.
+ */
+function renderRouteEcho(section, options = {}) {
+  const echo = section.routeEcho;
+  if (!echo || typeof echo !== 'object') {
+    return '<div><strong>Route echo:</strong> Not captured for this section</div>';
+  }
+  const tokens = Array.isArray(echo.tokens) ? echo.tokens : [];
+  const checkpoints = Array.isArray(echo.checkpoints) ? echo.checkpoints : [];
+  if (!Number.isInteger(echo.line) && tokens.length === 0 && checkpoints.length === 0) {
+    return '<div><strong>Route echo:</strong> Not found in this section</div>';
+  }
+
+  const found = Number.isInteger(echo.line)
+    ? `line ${echo.line} · ${tokens.length} token(s)`
+    : 'no route line found';
+  const rows = [`<div><strong>Route echo:</strong> ${escapeHtml(found)}</div>`];
+  rows.push(checkpoints.length
+    ? `<div><strong>Echoed checkpoint (%Chk / %OldChk):</strong> ${checkpoints.map(name => `<code>${escapeHtml(name)}</code>`).join(', ')}</div>`
+    : '<div><strong>Echoed checkpoint (%Chk / %OldChk):</strong> none</div>');
+
+  if (Array.isArray(options?.expectedRouteTokens)) {
+    const ignored = new Set(['SP', 'TEST', 'MAXDISK']);
+    const expected = options.expectedRouteTokens
+      .map(token => String(token).trim().toUpperCase())
+      .filter(token => token && !ignored.has(token));
+    const missing = expected.filter(token => !tokens.includes(token));
+    const unexpected = tokens.filter(token => !expected.includes(token) && !ignored.has(token));
+    const parts = [];
+    if (missing.length) parts.push(`missing ${missing.join(', ')}`);
+    if (unexpected.length) parts.push(`unexpected ${unexpected.join(', ')}`);
+    const summary = parts.length ? parts.join(' · ') : 'all expected tokens present';
+    rows.push(`<div><strong>Route echo comparison:</strong> ${escapeHtml(summary)}</div>`);
+  }
+
+  if (tokens.length) {
+    rows.push(`<details class="inspector-evidence"><summary>Route tokens (${tokens.length})</summary><code>${escapeHtml(tokens.join(' '))}</code></details>`);
+  }
+  if (echo.evidence) {
+    const line = Number.isInteger(echo.line) ? `, line ${echo.line}` : '';
+    rows.push(`<details class="inspector-evidence"><summary>Route echo source${line}</summary><code>${escapeHtml(echo.evidence)}</code></details>`);
+  }
+  return rows.join('');
+}
+
 export class GaussianOutputInspector {
   constructor(container) {
     this.container = container;
@@ -279,7 +330,7 @@ export class GaussianOutputInspector {
     `;
   }
 
-  renderSection(section) {
+  renderSection(section, options = {}) {
     const scfEnergy = formatEnergy(section.scf.energyHartree);
     const finalEnergy = section.finalEnergy;
     const hasFinalEnergy = Number.isFinite(finalEnergy?.valueHartree);
@@ -323,6 +374,7 @@ export class GaussianOutputInspector {
           <div><strong>SCF:</strong> ${escapeHtml(section.scf.status)} · ${escapeHtml(section.scf.method || 'method not found')}${section.scf.line ? ` · line ${section.scf.line}` : ''}</div>
           <div><strong>Reference energy (SCF):</strong> ${escapeHtml(scfEnergy)}</div>
           <div><strong>${escapeHtml(methodEnergyName)}:</strong> ${escapeHtml(methodEnergy)}</div>
+          ${renderRouteEcho(section, options)}
           <div><strong>Optimization:</strong> ${escapeHtml(section.optimization.status)}${section.optimization.line ? ` · line ${section.optimization.line}` : ''}</div>
           <div><strong>Frequencies:</strong> ${escapeHtml(formatFrequency(section))}${escapeHtml(imaginaryValueText)}</div>
           ${renderThermochemistry(section)}

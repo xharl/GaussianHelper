@@ -1,5 +1,11 @@
 import { evaluateWorkflowOutput, methodRequiresFinalEnergy } from './workflowGates.js';
 import { validateInputCompleteness } from './validation.js';
+import {
+  MAX_ROUTE_CHECKPOINT_CHARS,
+  MAX_ROUTE_CHECKPOINTS,
+  MAX_ROUTE_TOKEN_CHARS,
+  MAX_ROUTE_TOKENS,
+} from '../parsers/gaussianLogParser.js';
 
 export const WORKFLOW_SCHEMA_VERSION = 1;
 export const MAX_WORKFLOW_TASKS = 100;
@@ -404,6 +410,10 @@ function validateParsedSection(section) {
   const optimization = section.optimization;
   if (!isRecord(optimization) || !['unknown', 'converged', 'not converged'].includes(optimization.status)
     || !isOptionalLine(optimization.line) || !isOptionalEvidence(optimization.evidence)) return false;
+  // Older saved projects predate route-echo capture; a missing block is omitted
+  // from the saved file rather than invented, so legacy verdicts stay intact.
+  if (section.routeEcho !== undefined && section.routeEcho !== null
+    && !validateRouteEchoBlock(section.routeEcho)) return false;
   const frequencies = section.frequencies;
   if (!isRecord(frequencies)
     || (frequencies.count !== null && (!Number.isInteger(frequencies.count) || frequencies.count < 0))
@@ -436,6 +446,21 @@ function isOptionalEvidence(value) {
 
 function isOptionalFinite(value) {
   return value === null || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function validateRouteEchoBlock(block) {
+  if (!isRecord(block)) return false;
+  if (!Array.isArray(block.tokens) || block.tokens.length > MAX_ROUTE_TOKENS) return false;
+  if (block.tokens.some(token => typeof token !== 'string' || token.length === 0
+    || token.length > MAX_ROUTE_TOKEN_CHARS || token !== token.toUpperCase())) return false;
+  if (!Array.isArray(block.checkpoints) || block.checkpoints.length > MAX_ROUTE_CHECKPOINTS) return false;
+  if (block.checkpoints.some(name => typeof name !== 'string' || name.length === 0
+    || name.length > MAX_ROUTE_CHECKPOINT_CHARS || /[\r\n\0]/.test(name))) return false;
+  if (!isOptionalLine(block.line) || !isOptionalEvidence(block.evidence)) return false;
+  // A token set without its source line cannot be re-verified; refuse it rather
+  // than reporting a comparison that has no evidence behind it.
+  if (block.tokens.length > 0 && (block.line === null || typeof block.evidence !== 'string')) return false;
+  return true;
 }
 
 function validateFinalEnergyBlock(block) {
@@ -573,6 +598,14 @@ function sanitizeParsedSection(section) {
       line: section.finalEnergy?.line ?? null,
       evidence: section.finalEnergy?.evidence ?? null,
     },
+    ...(section.routeEcho ? {
+      routeEcho: {
+        tokens: [...(section.routeEcho.tokens || [])].slice(0, MAX_ROUTE_TOKENS),
+        checkpoints: [...(section.routeEcho.checkpoints || [])].slice(0, MAX_ROUTE_CHECKPOINTS),
+        line: section.routeEcho.line ?? null,
+        evidence: section.routeEcho.evidence ?? null,
+      },
+    } : {}),
     thermochemistry: {
       zeroPointHartree: section.thermochemistry?.zeroPointHartree ?? null,
       thermalCorrectionHartree: {

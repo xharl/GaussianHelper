@@ -83,7 +83,7 @@ describe('WorkflowWorkbench', () => {
     expect(workbench.setTaskDependencies(second.id, [first.id])).toBe(true);
     expect(workbench.markTaskAwaitingOutput(first.id)).toBe(true);
 
-    const file = new Blob(['SCF Done: E(RHF) = -0.5 A.U. after 2 cycles\nNormal termination of Gaussian 16\n']);
+    const file = new Blob([' #p HF/3-21G SP\n\nSCF Done: E(RHF) = -0.5 A.U. after 2 cycles\nNormal termination of Gaussian 16\n']);
     Object.defineProperty(file, 'name', { value: first.outputName });
     await workbench.importOutputFiles([file]);
 
@@ -124,7 +124,7 @@ describe('WorkflowWorkbench', () => {
     const workbench = new WorkflowWorkbench(makeContainer(), () => singlePoint);
     const task = workbench.addCurrentTask();
     workbench.markTaskAwaitingOutput(task.id);
-    workbench.queueParsedOutput(parseGaussianLogText('Normal termination of Gaussian 16', task.outputName));
+    workbench.queueParsedOutput(parseGaussianLogText('#p HF/3-21G SP\n\nNormal termination of Gaussian 16', task.outputName));
     expect(deriveTaskStates(workbench.project)[task.id]).toBe('passed');
 
     workbench.updateGate(task.id, 'requireScfRecord', true);
@@ -174,7 +174,9 @@ name.log` });
     const task = workbench.addCurrentTask();
     workbench.markTaskAwaitingOutput(task.id);
     const parsed = parseGaussianLogText(
-      `UNIQUE_RAW_SENTINEL
+      ` #p HF/3-21G SP
+
+UNIQUE_RAW_SENTINEL
 Normal termination of Gaussian 16
 Entering Gaussian System
 Normal termination of Gaussian 16`,
