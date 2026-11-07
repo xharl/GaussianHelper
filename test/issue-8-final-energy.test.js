@@ -273,10 +273,10 @@ describe('requireFinalEnergy workflow gate', () => {
       atoms: [{ symbol: 'H', x: 0, y: 0, z: 0 }],
     }, { gates: { requireFinalEnergy: false } });
     expect(optional.gates.requireFinalEnergy).toBe(false);
-    expect(evaluateWorkflowOutput(optional, sectionOf(' SCF Done:  E(RHF) =  -1.0 A.U.\nNormal termination of Gaussian 16\n')).overall).toBe('pass');
+    expect(evaluateWorkflowOutput(optional, sectionOf(' #p MP2/6-31G(d) SP\n\n SCF Done:  E(RHF) =  -1.0 A.U.\nNormal termination of Gaussian 16\n')).overall).toBe('pass');
 
     const forced = taskFor('B3LYP', { gates: { requireFinalEnergy: true } });
-    expect(evaluateWorkflowOutput(forced, sectionOf(MP2_LOG)).overall).toBe('unknown');
+    expect(evaluateWorkflowOutput(forced, sectionOf(' #p B3LYP/6-31G(d) SP\n\n SCF Done:  E(RB3LYP) =  -1.0 A.U.\nNormal termination of Gaussian 16\n')).overall).toBe('unknown');
   });
 });
 

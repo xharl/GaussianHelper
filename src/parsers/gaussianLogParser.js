@@ -2,6 +2,36 @@ const MAX_LOG_LINE_CHARS = 1024 * 1024;
 const MAX_DIAGNOSTICS_PER_SECTION = 30;
 const MAX_DIAGNOSTIC_CHARS = 300;
 const MAX_STORED_IMAGINARY_FREQUENCIES = 100;
+
+/**
+ * Route-echo capture bounds. A Gaussian route is a handful of keywords; these
+ * limits keep a hostile or corrupt log from growing the stored evidence.
+ */
+export const MAX_ROUTE_TOKENS = 64;
+export const MAX_ROUTE_TOKEN_CHARS = 80;
+export const MAX_ROUTE_CHECKPOINTS = 8;
+export const MAX_ROUTE_CHECKPOINT_CHARS = 128;
+const MAX_ROUTE_LINES = 8;
+
+/**
+ * Lines that end a route echo. Gaussian prints the route as `#...` lines
+ * (optionally wrapped) followed by a blank line and then the `1/18=20,...`
+ * route-parameter dump; logs from other versions may omit the blank line, so
+ * the next calculation record is treated as a hard stop too.
+ */
+const ROUTE_STOP_RE = new RegExp(
+  '^\\s*(?:'
+  + 'SCF Done|SCF convergence|Normal termination|Error termination|Entering Link|Leave Link|--Link1--|'
+  + 'Optimization (?:completed|stopped|failed)|Stationary point found|Number of steps exceeded|'
+  + 'Frequencies\\s*--|Harmonic frequencies|NAtoms=|Charge\\s*=|Multiplicity\\s*=|'
+  + 'Standard basis|General basis|Warning|Error|Converged\\?|Maximum Force|RMS\\s+Force|'
+  + 'Item\\s+Value|Step number|\\d+\\s*[/\\\\]'
+  + ')',
+  'i',
+);
+const CHECKPOINT_ECHO_RE = /^%(oldchk|chk)\s*=\s*(.+)$/i;
+const LINK1_ENTER_RE = /^\s*Entering Link 1\s*=/i;
+const LINK1_SPLIT_RE = /^\s*--Link1--\s*$/i;
 const NUMBER_PATTERN = '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[EeDd][+-]?\\d+)?';
 const SCF_DONE_RE = new RegExp(
   `\\bSCF Done:\\s*E\\(([^)]+)\\)\\s*=\\s*(${NUMBER_PATTERN})\\s*A\\.U\\b`,
@@ -145,11 +175,87 @@ function clipLine(line) {
   return `${text.slice(0, MAX_DIAGNOSTIC_CHARS - 1)}…`;
 }
 
+/**
+ * Normalise a Gaussian route (or an echoed route line) into a comparable token
+ * set.
+ *
+ * Gaussian's echo is a formatting artefact: case, keyword order, line wrapping
+ * and spacing inside `KEY=(A,B)` can all change between versions, while the
+ * calculation is identical. Tokens are therefore uppercased, `Method/Basis` is
+ * split into two tokens, spaces around `= ( ) ,` are removed, duplicates are
+ * dropped, and the `#N/#P/#T` verbosity flag is discarded. Bounded so a corrupt
+ * line cannot grow the stored evidence without limit.
+ *
+ * @param {string} text
+ * @returns {string[]} Uppercased, de-duplicated tokens in first-seen order.
+ */
+export function normalizeRouteTokens(text) {
+  if (typeof text !== 'string') return [];
+  const cleaned = text
+    .replace(/\0/g, '')
+    .replace(/^[ \t]*#+/, '')
+    .replace(/\s*,\s*/g, ',')
+    .replace(/\s*=\s*/g, '=')
+    .replace(/\s*\(\s*/g, '(')
+    .replace(/\s*\)/g, ')')
+    .replace(/\s*\/\s*/g, '/');
+  const tokens = [];
+  for (const chunk of cleaned.split(/\s+/)) {
+    if (!chunk) continue;
+    for (const part of chunk.split('/')) {
+      const token = part.toUpperCase();
+      // A bare N/P/T is the `#N`/`#P`/`#T` verbosity flag, never chemistry.
+      if (!token || /^[NPT]$/.test(token)) continue;
+      if (token.length > MAX_ROUTE_TOKEN_CHARS) continue;
+      if (!tokens.includes(token)) tokens.push(token);
+      if (tokens.length >= MAX_ROUTE_TOKENS) return tokens;
+    }
+  }
+  return tokens;
+}
+
+function isRouteEchoLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('#') || ROUTE_STOP_RE.test(line)) return false;
+  const body = trimmed.replace(/^#+/, '').trim();
+  return body.length > 0 && /[A-Za-z]/.test(body);
+}
+
+/**
+ * A route continuation line is keyword text that does not start with `#`.
+ * Gaussian prints the route exactly as it appeared in the input file, so a
+ * route wrapped over several input lines is echoed over several log lines.
+ */
+function isRouteContinuationLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length > 500) return false;
+  if (ROUTE_STOP_RE.test(line)) return false;
+  if (CHECKPOINT_ECHO_RE.test(trimmed)) return false;
+  if (!/[A-Za-z]/.test(trimmed)) return false;
+  // Reject prose and column-formatted output; route keywords never contain
+  // sentence colons or runs of alignment whitespace.
+  return !/:\s/.test(trimmed) && !/\s{3,}/.test(trimmed);
+}
+
+function normalizeCheckpointName(raw) {
+  let value = String(raw || '').trim();
+  if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value[value.length - 1] === value[0]) {
+    value = value.slice(1, -1).trim();
+  }
+  if (!value) return null;
+  return value.slice(0, MAX_ROUTE_CHECKPOINT_CHARS);
+}
+
+function makeRouteEcho() {
+  return { tokens: [], checkpoints: [], line: null, evidence: null };
+}
+
 function makeSection(index) {
   return {
     index,
     status: 'incomplete',
     termination: null,
+    routeEcho: makeRouteEcho(),
     scf: {
       status: 'unknown',
       method: null,
@@ -182,6 +288,12 @@ function publicSection(section) {
     index: section.index,
     status: section.status,
     termination: section.termination ? { ...section.termination } : null,
+    routeEcho: {
+      tokens: [...section.routeEcho.tokens],
+      checkpoints: [...section.routeEcho.checkpoints],
+      line: section.routeEcho.line,
+      evidence: section.routeEcho.evidence,
+    },
     scf: { ...section.scf },
     optimization: { ...section.optimization },
     frequencies: {
@@ -216,6 +328,9 @@ export class GaussianLogParser {
     this.sections = [];
     this.lineNumber = 0;
     this.current = makeSection(1);
+    this.routePhase = 'seek';
+    this.routeLineCount = 0;
+    this.routeContinuation = false;
     this.finishedResult = null;
   }
 
@@ -233,6 +348,8 @@ export class GaussianLogParser {
     this.lineNumber++;
     const line = rawLine.replace(/\0/g, '');
     if (line.trim()) this.current.hasContent = true;
+
+    this.recordRouteEcho(line);
 
     const scfMatch = line.match(SCF_DONE_RE);
     if (scfMatch) {
@@ -306,6 +423,98 @@ export class GaussianLogParser {
     }
   }
 
+  /**
+   * Capture the route echo and Link 0 checkpoint filenames for the current
+   * section.
+   *
+   * Gaussian prints `Entering Link 1 = ...`, then the Link 0 echo
+   * (`%Chk=`, `%OldChk=`) and the route as `#`-prefixed lines. A route is
+   * captured once per section: taking the first echo keeps a `--Link1--` chain
+   * from overwriting the route that this section's task was exported with.
+   */
+  recordRouteEcho(line) {
+    const echo = this.current.routeEcho;
+    const trimmed = line.trim();
+
+    const checkpointMatch = trimmed.match(CHECKPOINT_ECHO_RE);
+    if (checkpointMatch && echo.line === null) {
+      const name = normalizeCheckpointName(checkpointMatch[2]);
+      if (name && !echo.checkpoints.includes(name) && echo.checkpoints.length < MAX_ROUTE_CHECKPOINTS) {
+        echo.checkpoints.push(name);
+      }
+    }
+
+    if (LINK1_ENTER_RE.test(line)) {
+      if (echo.line === null && this.routePhase !== 'collect') this.routePhase = 'armed';
+      return;
+    }
+
+    if (LINK1_SPLIT_RE.test(line)) {
+      if (echo.line === null) {
+        this.routePhase = 'armed';
+        this.routeLineCount = 0;
+      }
+      return;
+    }
+
+    if (this.routePhase === 'collect') {
+      if (!trimmed) {
+        this.routePhase = 'done';
+        this.routeContinuation = false;
+        return;
+      }
+      if (isRouteEchoLine(line) || (this.routeContinuation && isRouteContinuationLine(line))) {
+        this.appendRouteLine(line);
+        return;
+      }
+      this.routePhase = 'done';
+      this.routeContinuation = false;
+      return;
+    }
+
+    if (echo.line === null && isRouteEchoLine(line)
+      && (this.routePhase === 'armed' || (this.routePhase === 'seek' && !this.hasCalculationEvidence()))) {
+      this.appendRouteLine(line);
+      this.routePhase = 'collect';
+      return;
+    }
+
+    if ((this.routePhase === 'armed' || this.routePhase === 'seek') && this.hasCalculationEvidence()) {
+      this.routePhase = 'done';
+    }
+  }
+
+  appendRouteLine(line) {
+    const echo = this.current.routeEcho;
+    if (this.routeLineCount >= MAX_ROUTE_LINES) {
+      this.routePhase = 'done';
+      this.routeContinuation = false;
+      return;
+    }
+    this.routeLineCount++;
+    if (echo.line === null) {
+      echo.line = this.lineNumber;
+      echo.evidence = clipLine(line);
+    } else {
+      echo.evidence = clipLine(`${echo.evidence} ${line.trim()}`);
+    }
+    for (const token of normalizeRouteTokens(line)) {
+      if (!echo.tokens.includes(token)) echo.tokens.push(token);
+    }
+    // The next line may continue a wrapped route; isRouteContinuationLine()
+    // rejects blank lines, route parameters, and calculation output.
+    this.routeContinuation = true;
+  }
+
+  hasCalculationEvidence() {
+    const section = this.current;
+    return section.scf.status !== 'unknown'
+      || section.scf.records > 0
+      || section.optimization.status !== 'unknown'
+      || section.frequencies.hasRecord
+      || section.finalEnergy.valueHartree !== null;
+  }
+
   recordThermochemistry(line) {
     const block = this.current.thermochemistry;
     for (const entry of THERMOCHEMISTRY_ENTRIES) {
@@ -374,6 +583,11 @@ export class GaussianLogParser {
     this.current.termination = { line: this.lineNumber, text: clipLine(line) };
     this.sections.push(publicSection(this.current));
     this.current = makeSection(this.sections.length + 1);
+    // Route/checkpoint evidence belongs to the section that just closed; never
+    // let a second calculation inherit the first one's echoed route.
+    this.routePhase = 'seek';
+    this.routeLineCount = 0;
+    this.routeContinuation = false;
   }
 
   finish() {
