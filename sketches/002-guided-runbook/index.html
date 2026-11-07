@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guided Runbook — Diels–Alder TS Verification</title>
+  <style>
+    :root {
+      --bg: #08090d;
+      --panel: #0f1219;
+      --panel-2: #121620;
+      --panel-3: #171b26;
+      --line: #242936;
+      --line-soft: #1b202b;
+      --text: #e8eaed;
+      --muted: #9ca3af;
+      --dim: #697183;
+      --indigo: #6366f1;
+      --violet: #8b5cf6;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #f87171;
+      --cyan: #22d3ee;
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+      outline: 2px solid #a5b4fc;
+      outline-offset: 2px;
+    }
+
+    .app-shell { height: 100vh; min-height: 700px; display: flex; flex-direction: column; }
+    .topbar {
+      height: 52px;
+      flex: 0 0 52px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 0 22px;
+      background: #0b0d12;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+    .brand-mark {
+      width: 28px; height: 28px; display: grid; place-items: center;
+      border-radius: 7px; color: #c7d2fe;
+      background: linear-gradient(145deg, rgba(99,102,241,.25), rgba(139,92,246,.12));
+      border: 1px solid rgba(129,140,248,.35);
+    }
+    .brand-name { font-size: 13px; font-weight: 650; letter-spacing: -.01em; }
+    .brand-name span { color: var(--muted); font-weight: 450; }
+    .concept-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 8px; border: 1px solid #334155; border-radius: 5px;
+      color: #cbd5e1; background: #111722;
+      font: 600 9px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase;
+    }
+    .concept-tag::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--warning); }
+    .topbar-spacer { flex: 1; }
+    .execution-note { color: var(--dim); font-size: 11px; display: flex; align-items: center; gap: 7px; }
+    .execution-note svg { color: var(--muted); }
+    .primary-btn {
+      border: 1px solid #7779f4; border-radius: 7px; padding: 8px 14px;
+      background: linear-gradient(180deg, #7073f3, #5859df);
+      box-shadow: 0 4px 14px rgba(99,102,241,.17), inset 0 1px rgba(255,255,255,.12);
+      color: white; font-weight: 650; font-size: 12px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .primary-btn:hover { filter: brightness(1.09); }
+    .primary-btn:active { transform: translateY(1px); }
+
+    .projectbar {
+      min-height: 76px; flex: 0 0 76px; padding: 13px 24px;
+      display: flex; align-items: center; gap: 22px;
+      background: radial-gradient(circle at 25% 0%, rgba(99,102,241,.07), transparent 38%), var(--bg);
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .project-title { min-width: 0; }
+    .breadcrumb { color: var(--dim); font: 10px/1.4 var(--mono); letter-spacing: .02em; margin-bottom: 5px; }
+    .breadcrumb b { color: #aab2c2; font-weight: 500; }
+    h1 { font-size: 20px; line-height: 1.25; letter-spacing: -.025em; font-weight: 620; }
+    h1 .slash { color: #454c5e; font-weight: 400; margin: 0 7px; }
+    .reaction-strip {
+      margin-left: auto; display: flex; align-items: center; gap: 14px;
+      padding: 9px 13px; border-left: 1px solid var(--line);
+    }
+    .molecule-pair { display: flex; align-items: center; gap: 9px; color: #b6bfd0; }
+    .molecule { text-align: center; }
+    .molecule svg { display: block; margin: auto; color: #818cf8; }
+    .molecule small { display: block; color: var(--dim); font-size: 9px; margin-top: 2px; }
+    .reaction-plus, .reaction-arrow { color: #555e72; font: 14px var(--mono); }
+    .reaction-meta { padding-left: 12px; border-left: 1px solid var(--line-soft); }
+    .reaction-meta strong { display: block; font: 500 11px var(--mono); color: #cbd5e1; }
+    .reaction-meta span { display: block; color: var(--dim); font-size: 10px; margin-top: 3px; }
+
+    .workspace {
+      flex: 1; min-height: 0;
+      display: grid; grid-template-columns: 222px minmax(480px, 1fr) 318px;
+      gap: 14px; padding: 14px 16px 16px;
+    }
+    .panel {
+      min-width: 0; min-height: 0; background: var(--panel);
+      border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    }
+    .palette-panel { display: flex; flex-direction: column; }
+    .panel-heading { padding: 16px 15px 12px; border-bottom: 1px solid var(--line-soft); }
+    .eyebrow { color: #737d91; font: 600 9px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+    .panel-heading h2, .recipe-head h2, .inspector-head h2 { font-size: 13px; font-weight: 620; margin-top: 4px; }
+    .panel-heading p:last-child { color: var(--dim); font-size: 10px; margin-top: 5px; }
+    .palette-list { padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+    .palette-group-label { color: #5f687a; font: 600 9px var(--mono); letter-spacing: .1em; padding: 5px 5px 2px; }
+    .palette-item {
+      width: 100%; display: grid; grid-template-columns: 32px 1fr 18px; align-items: center; gap: 9px;
+      padding: 9px 8px; text-align: left; background: transparent;
+      border: 1px solid transparent; border-radius: 7px; cursor: pointer;
+      transition: background .15s, border-color .15s, transform .15s;
+    }
+    .palette-item:hover { background: var(--panel-3); border-color: #303748; transform: translateX(2px); }
+    .palette-item:active { transform: translateX(2px) scale(.99); }
+    .palette-glyph, .block-glyph {
+      display: grid; place-items: center; flex: 0 0 auto;
+      font: 650 9px var(--mono); letter-spacing: -.02em;
+      border: 1px solid #343b4d; background: #1a1f2b; color: #a5b4fc;
+      border-radius: 6px;
+    }
+    .palette-glyph { width: 32px; height: 32px; }
+    .palette-item[data-kind="frequency"] .palette-glyph, .step[data-kind="frequency"] .block-glyph { color: #67e8f9; background: rgba(34,211,238,.07); border-color: rgba(34,211,238,.22); }
+    .palette-item[data-kind="condition"] .palette-glyph, .step[data-kind="condition"] .block-glyph { color: #fbbf24; background: rgba(245,158,11,.07); border-color: rgba(245,158,11,.25); }
+    .palette-item[data-kind="irc"] .palette-glyph, .step[data-kind="irc"] .block-glyph { color: #93c5fd; background: rgba(96,165,250,.07); border-color: rgba(96,165,250,.24); }
+    .palette-item[data-kind="single"] .palette-glyph, .step[data-kind="single"] .block-glyph { color: #c4b5fd; background: rgba(139,92,246,.09); border-color: rgba(139,92,246,.27); }
+    .palette-item[data-kind="review"] .palette-glyph, .step[data-kind="review"] .block-glyph { color: #fda4af; background: rgba(251,113,133,.06); border-color: rgba(251,113,133,.22); }
+    .palette-item[data-kind="structure"] .palette-glyph, .step[data-kind="structure"] .block-glyph { color: #6ee7b7; background: rgba(16,185,129,.06); border-color: rgba(16,185,129,.22); }
+    .palette-copy strong { display: block; font-size: 12px; font-weight: 570; color: #d4d9e2; }
+    .palette-copy small { display: block; margin-top: 2px; color: #818b9e; font-size: 10px; }
+    .add-sign { color: #596276; font: 18px/1 var(--mono); text-align: center; }
+    .palette-item:hover .add-sign { color: #a5b4fc; }
+    .palette-foot {
+      margin-top: auto; padding: 12px 14px; border-top: 1px solid var(--line-soft);
+      background: #0d1016; color: var(--dim); font-size: 10px;
+    }
+    .palette-foot strong { display: block; color: #aab2c2; font-size: 10px; font-weight: 550; margin-bottom: 3px; }
+
+    .recipe-panel { display: flex; flex-direction: column; background: #0c0f15; }
+    .recipe-head {
+      flex: 0 0 62px; display: flex; align-items: center; gap: 12px;
+      padding: 11px 17px; background: var(--panel); border-bottom: 1px solid var(--line);
+    }
+    .recipe-head-copy { margin-right: auto; }
+    .recipe-head h2 { display: inline; margin-right: 8px; }
+    .step-total { color: var(--dim); font: 10px var(--mono); }
+    .validation-state { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 10px; white-space: nowrap; }
+    .validation-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #545d70; }
+    .validation-state.valid { color: #6ee7b7; }
+    .validation-state.valid::before { background: var(--success); }
+    .validation-state.invalid { color: #fca5a5; }
+    .validation-state.invalid::before { background: var(--danger); }
+    .text-btn { background: transparent; border: 0; color: #7f899c; cursor: pointer; font-size: 10px; padding: 5px; }
+    .text-btn:hover { color: #d6dbea; }
+    .recipe-scroll {
+      flex: 1; min-height: 0; overflow-y: auto; padding: 12px 18px 16px;
+      background-image: radial-gradient(#262c39 0.7px, transparent 0.7px);
+      background-size: 18px 18px;
+      scrollbar-color: #313949 transparent; scrollbar-width: thin;
+    }
+    .recipe-intro { display: flex; align-items: center; gap: 8px; margin: 0 0 8px 2px; color: #818b9e; font-size: 10px; }
+    .recipe-intro .line { height: 1px; flex: 1; background: var(--line-soft); }
+    .recipe-list { max-width: 850px; margin: 0 auto; }
+
+    .step {
+      position: relative; border: 1px solid #282e3b; border-radius: 8px;
+      background: rgba(17,21,29,.97); cursor: pointer;
+      transition: border-color .15s, background .15s, box-shadow .15s;
+    }
+    .step:hover { border-color: #3b4355; background: #131823; }
+    .step.selected { border-color: #7169e9; box-shadow: 0 0 0 1px rgba(99,102,241,.16), 0 6px 18px rgba(0,0,0,.16); }
+    .step.selected::before {
+      content: ""; position: absolute; left: -1px; top: 12px; bottom: 12px; width: 2px;
+      background: #8b5cf6; border-radius: 2px;
+    }
+    .step.is-ready { border-color: rgba(99,102,241,.58); }
+    .step-head { display: grid; grid-template-columns: 23px 34px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 10px 11px; }
+    .step-number { color: #515b6f; font: 10px var(--mono); }
+    .block-glyph { width: 34px; height: 34px; }
+    .step-copy { min-width: 0; }
+    .step-title-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .step-title { color: #e0e4eb; font-size: 12px; font-weight: 590; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .next-label { color: #c7d2fe; background: rgba(99,102,241,.16); border: 1px solid rgba(129,140,248,.26); border-radius: 3px; padding: 1px 4px; font: 650 8px var(--mono); letter-spacing: .08em; }
+    .step-method { color: #9aa4b6; font: 10px/1.4 var(--mono); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .blocked-reason { display: flex; align-items: center; gap: 5px; color: #d0a760; font-size: 10px; margin-top: 3px; }
+    .blocked-reason::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--warning); flex: 0 0 auto; }
+    .status-pill {
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      min-width: 65px; padding: 4px 7px; border-radius: 10px;
+      font: 550 9px/1 var(--mono); letter-spacing: .02em;
+      border: 1px solid #303746; color: #9ca3af; background: #171c25;
+    }
+    .status-pill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .status-pill.passed { color: #6ee7b7; background: rgba(16,185,129,.07); border-color: rgba(16,185,129,.22); }
+    .status-pill.ready { color: #a5b4fc; background: rgba(99,102,241,.09); border-color: rgba(99,102,241,.28); }
+    .status-pill.blocked { color: #9aa3b3; }
+    .status-pill.blocked::before { background: #697385; }
+
+    .connector { height: 22px; margin-left: 23px; padding-left: 23px; position: relative; display: flex; align-items: center; }
+    .connector::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 0; width: 1px; background: #353d4d; }
+    .connector::after { content: ""; position: absolute; left: 7px; bottom: 3px; width: 5px; height: 5px; border-right: 1px solid #657087; border-bottom: 1px solid #657087; transform: rotate(45deg); }
+    .connector-label { position: relative; z-index: 1; padding: 2px 7px; border-radius: 4px; background: #0c0f15; color: #8792a6; font: 9px var(--mono); letter-spacing: .02em; }
+
+    .condition-step { cursor: default; background: #11151d; border-color: #393328; }
+    .condition-step.selected { border-color: #7169e9; }
+    .condition-step > .step-head { cursor: pointer; padding-bottom: 8px; }
+    .condition-expression {
+      margin: 0 12px 11px 44px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+      padding: 8px 9px; border-radius: 6px; background: #0b0e14; border: 1px solid #252b37;
+    }
+    .expression-if { color: #fbbf24; font: 650 10px var(--mono); margin-right: 3px; }
+    .expression-field { color: #d1d7e3; font: 10px var(--mono); }
+    .condition-expression select, .condition-expression input {
+      height: 26px; border: 1px solid #3a4150; border-radius: 4px; background: #171c26; color: #e8eaed;
+      font: 10px var(--mono); cursor: pointer;
+    }
+    .condition-expression select { padding: 0 19px 0 7px; }
+    .condition-expression input { width: 48px; padding: 0 6px; cursor: text; }
+    .expression-help { margin-left: auto; color: #5f6878; font-size: 8px; }
+    .branches { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 0 11px 11px; }
+    .branch { min-width: 0; border-radius: 7px; padding: 9px; background: #0c1016; border: 1px solid #222a34; }
+    .branch-true { border-top-color: rgba(16,185,129,.55); }
+    .branch-false { border-top-color: rgba(245,158,11,.5); }
+    .branch-label { display: flex; align-items: center; gap: 6px; min-height: 19px; margin-bottom: 7px; font: 600 9px/1.35 var(--mono); letter-spacing: .025em; }
+    .branch-true .branch-label { color: #6ee7b7; }
+    .branch-false .branch-label { color: #f3bd67; }
+    .branch-key { display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid currentColor; border-radius: 4px; font-size: 8px; opacity: .9; }
+    .branch .step-head { grid-template-columns: 18px 28px minmax(0,1fr); gap: 7px; padding: 8px; }
+    .branch .block-glyph { width: 28px; height: 28px; font-size: 8px; }
+    .branch .step-number { font-size: 9px; color: #798397; }
+    .branch .step-title { font-size: 11px; }
+    .branch .step-method { font-size: 9px; white-space: normal; }
+    .branch .status-pill { grid-column: 3; justify-self: start; min-width: 0; margin-top: 1px; padding: 3px 6px; font-size: 8px; }
+    .branch .blocked-reason { font-size: 9px; }
+    .branch .connector { margin-left: 15px; height: 21px; padding-left: 15px; }
+    .branch .connector::before { left: 7px; }
+    .branch .connector::after { left: 4px; }
+    .branch .connector-label { font-size: 8px; padding-left: 4px; background: #0c1016; }
+    .terminal-note { display: flex; align-items: center; gap: 5px; color: #a18662; font: 9px var(--mono); padding: 7px 3px 0; }
+    .empty-branch { border: 1px dashed #303746; border-radius: 6px; padding: 16px 8px; color: var(--dim); text-align: center; font-size: 9px; }
+    .new-step-flash { animation: flash 1s ease-out; }
+    @keyframes flash { 0% { box-shadow: 0 0 0 3px rgba(139,92,246,.55); } 100% { box-shadow: 0 0 0 0 rgba(139,92,246,0); } }
+
+    .inspector-panel { display: flex; flex-direction: column; background: var(--panel); }
+    .inspector-head { flex: 0 0 62px; display: flex; align-items: center; justify-content: space-between; padding: 11px 15px; border-bottom: 1px solid var(--line); }
+    .local-chip { color: #6ee7b7; border: 1px solid rgba(16,185,129,.2); background: rgba(16,185,129,.06); border-radius: 4px; padding: 3px 5px; font: 600 8px var(--mono); letter-spacing: .08em; }
+    .inspector-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; scrollbar-color: #313949 transparent; scrollbar-width: thin; }
+    .inspector-section { margin-bottom: 12px; }
+    .readiness-card { padding: 12px; background: #121722; border: 1px solid #272e3d; border-radius: 8px; }
+    .readiness-top { display: flex; align-items: center; gap: 12px; }
+    .progress-ring {
+      --progress: 0%; width: 47px; height: 47px; border-radius: 50%; flex: 0 0 auto;
+      display: grid; place-items: center;
+      background: conic-gradient(var(--success) var(--progress), #29303e 0);
+      position: relative;
+    }
+    .progress-ring::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: #121722; }
+    .progress-ring span { position: relative; z-index: 1; font: 600 10px var(--mono); }
+    .readiness-copy strong { display: block; font-size: 12px; font-weight: 600; }
+    .readiness-copy span { display: block; color: var(--muted); font-size: 10px; margin-top: 3px; }
+    .status-counts { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; margin-top: 11px; }
+    .status-count { padding: 6px 4px; text-align: center; border-radius: 5px; background: #0d1118; color: var(--muted); font-size: 8px; }
+    .status-count b { display: block; font: 600 12px var(--mono); margin-bottom: 2px; }
+    .status-count.passed b { color: var(--success); }
+    .status-count.ready b { color: #818cf8; }
+    .next-action {
+      border: 1px solid rgba(99,102,241,.32); border-radius: 8px; overflow: hidden;
+      background: linear-gradient(135deg, rgba(99,102,241,.09), rgba(139,92,246,.025));
+    }
+    .next-action-head { padding: 10px 11px 0; color: #a5b4fc; font: 600 8px var(--mono); letter-spacing: .1em; }
+    .next-action-body { padding: 7px 11px 11px; }
+    .next-action h3 { font-size: 12px; font-weight: 600; }
+    .next-action p { color: #939db0; font-size: 10px; margin-top: 4px; }
+    .route-preview { margin-top: 8px; color: #c7d2fe; font: 9px/1.6 var(--mono); word-break: break-word; }
+    .secondary-btn {
+      border: 1px solid #343d50; background: #181e2a; color: #cbd5e1; border-radius: 6px;
+      padding: 7px 10px; font-size: 10px; font-weight: 550; cursor: pointer;
+    }
+    .secondary-btn:hover { border-color: #59657e; background: #1d2432; }
+    .secondary-btn:disabled { opacity: .35; cursor: not-allowed; }
+    .next-action .secondary-btn { width: 100%; margin-top: 9px; border-color: rgba(129,140,248,.3); color: #d8dcff; }
+    .handoff { margin: 0 10px 10px; padding: 9px; border-radius: 6px; background: #0b0e14; border: 1px solid #262d3a; }
+    .handoff strong { color: #cbd5e1; font-size: 9px; }
+    .handoff ul { list-style: none; margin-top: 6px; }
+    .handoff li { color: #8e98aa; font-size: 9px; margin: 4px 0; padding-left: 12px; position: relative; }
+    .handoff li::before { content: "✓"; position: absolute; left: 0; color: var(--success); }
+
+    .section-label { color: #8792a5; font: 600 9px var(--mono); letter-spacing: .11em; text-transform: uppercase; margin: 8px 2px 4px; }
+    .selected-card { border: 1px solid #272e3b; border-radius: 8px; padding: 11px; background: #10141c; }
+    .selected-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .selected-card h3 { font-size: 12px; font-weight: 600; }
+    .selected-kind { color: var(--dim); font: 8px var(--mono); margin-top: 3px; text-transform: uppercase; letter-spacing: .07em; }
+    .detail-list { margin-top: 10px; border-top: 1px solid #222936; padding-top: 8px; }
+    .detail-row { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 4px 0; font-size: 10px; }
+    .detail-row dt { color: #8490a4; }
+    .detail-row dd { color: #c3cad6; font-family: var(--mono); font-size: 9px; word-break: break-word; }
+    .dependency-callout { margin-top: 9px; padding: 8px; border-radius: 5px; background: rgba(245,158,11,.055); border: 1px solid rgba(245,158,11,.15); }
+    .dependency-callout strong { display: block; color: #d9ae67; font-size: 9px; font-weight: 600; }
+    .dependency-callout p { color: #a79478; font-size: 9px; margin-top: 3px; }
+    .ready-callout { margin-top: 9px; padding: 8px; border-radius: 5px; background: rgba(99,102,241,.07); border: 1px solid rgba(99,102,241,.17); color: #aab4ec; font-size: 9px; }
+    .passed-callout { margin-top: 9px; padding: 8px; border-radius: 5px; background: rgba(16,185,129,.055); border: 1px solid rgba(16,185,129,.15); color: #82c9ae; font-size: 9px; }
+    .step-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .step-controls .secondary-btn { padding: 7px 5px; }
+    .blocked-summary { padding: 10px; border: 1px solid #292f3b; border-radius: 7px; background: #10141b; }
+    .blocked-summary strong { display: block; color: #c1c8d3; font-size: 10px; font-weight: 550; }
+    .blocked-summary span { display: block; color: #8f99ab; font-size: 9px; margin-top: 3px; }
+    .inspector-disclaimer { padding: 10px 13px; border-top: 1px solid var(--line-soft); color: #697386; font-size: 9px; background: #0d1016; }
+
+    .toast {
+      position: fixed; right: 22px; bottom: 20px; z-index: 50; max-width: 390px;
+      display: flex; align-items: center; gap: 10px; padding: 11px 14px;
+      border: 1px solid #3b4354; border-radius: 8px; background: #181e29;
+      box-shadow: 0 14px 40px rgba(0,0,0,.45); color: #e2e7ef; font-size: 11px;
+      opacity: 0; transform: translateY(10px); pointer-events: none;
+      transition: opacity .2s, transform .2s;
+    }
+    .toast.visible { opacity: 1; transform: translateY(0); }
+    .toast-icon { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: rgba(99,102,241,.14); color: #a5b4fc; font: 650 11px var(--mono); flex: 0 0 auto; }
+    .toast.success { border-color: rgba(16,185,129,.4); }
+    .toast.success .toast-icon { background: rgba(16,185,129,.13); color: #6ee7b7; }
+    .toast.error { border-color: rgba(248,113,113,.4); }
+    .toast.error .toast-icon { background: rgba(248,113,113,.13); color: #fca5a5; }
+
+    @media (max-width: 1180px) {
+      .workspace { grid-template-columns: 194px minmax(430px,1fr) 280px; gap: 10px; padding: 10px; }
+      .reaction-strip { display: none; }
+      .expression-help { display: none; }
+      .step-head { gap: 7px; }
+      .branches { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 880px) {
+      body { overflow: auto; }
+      .app-shell { height: auto; min-height: 100vh; }
+      .execution-note { display: none; }
+      .workspace { grid-template-columns: 175px minmax(0,1fr); }
+      .inspector-panel { grid-column: 1 / -1; min-height: 600px; }
+      .recipe-panel { min-height: 720px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M2 18h20M4 17c3.5 0 3-11 8-11s4.5 11 8 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 17c1.5 0 1.3-6 4-6s2.5 6 4 6" stroke="currentColor" stroke-width="1.2" opacity=".55"/></svg>
+        </div>
+        <div class="brand-name">Gaussian<span>Helper</span></div>
+      </div>
+      <span class="concept-tag">Interactive concept</span>
+      <div class="topbar-spacer"></div>
+      <span class="execution-note">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2" stroke="currentColor"/></svg>
+        External execution only
+      </span>
+      <button class="primary-btn" id="validateBtn">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.8l5 2v3.5c0 3.2-2.1 5.7-5 6.9-2.9-1.2-5-3.7-5-6.9V3.8l5-2z" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 8l1.6 1.6 3.4-3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Validate recipe
+      </button>
+    </header>
+
+    <section class="projectbar" aria-label="Project summary">
+      <div class="project-title">
+        <div class="breadcrumb">PROJECTS / <b>DA-TS-014</b> / VERIFICATION RUNBOOK</div>
+        <h1>Diels–Alder <span class="slash">/</span> Transition-state verification</h1>
+      </div>
+      <div class="reaction-strip" aria-label="Cyclopentadiene plus acrylonitrile, endo approach">
+        <div class="molecule-pair">
+          <div class="molecule">
+            <svg width="38" height="29" viewBox="0 0 44 32" fill="none" aria-hidden="true"><path d="M7 25L4 9l16-6 17 7-4 16H7z" stroke="currentColor" stroke-width="1.3"/><path d="M7 10l8 4M32 11l-7 4" stroke="currentColor" stroke-width="1.1"/></svg>
+            <small>cyclopentadiene</small>
+          </div>
+          <span class="reaction-plus">+</span>
+          <div class="molecule">
+            <svg width="35" height="29" viewBox="0 0 40 32" fill="none" aria-hidden="true"><path d="M5 23L20 8l12 1M19 9l1-6M22 10l1-6" stroke="currentColor" stroke-width="1.3"/><text x="31" y="16" fill="currentColor" font-size="9" font-family="monospace">N</text></svg>
+            <small>acrylonitrile</small>
+          </div>
+          <span class="reaction-arrow">→</span>
+        </div>
+        <div class="reaction-meta"><strong>C₈H₉N · endo</strong><span>singlet · neutral · TS guess</span></div>
+      </div>
+    </section>
+
+    <main class="workspace">
+      <aside class="panel palette-panel" aria-label="Computational block palette">
+        <div class="panel-heading">
+          <p class="eyebrow">Block library</p>
+          <h2>Computational blocks</h2>
+          <p>Click to insert after the selected step.</p>
+        </div>
+        <div class="palette-list">
+          <div class="palette-group-label">INPUT &amp; SAMPLING</div>
+          <button class="palette-item" data-add="structure" data-kind="structure"><span class="palette-glyph">IN</span><span class="palette-copy"><strong>Structure input</strong><small>XYZ · checkpoint · editor</small></span><span class="add-sign">+</span></button>
+          <button class="palette-item" data-add="optimization" data-kind="optimization"><span class="palette-glyph">OPT</span><span class="palette-copy"><strong>Optimization</strong><small>Minimum or saddle point</small></span><span class="add-sign">+</span></button>
+          <button class="palette-item" data-add="frequency" data-kind="frequency"><span class="palette-glyph">FREQ</span><span class="palette-copy"><strong>Frequency analysis</strong><small>Modes &amp; thermal corrections</small></span><span class="add-sign">+</span></button>
+          <button class="palette-item" data-add="irc" data-kind="irc"><span class="palette-glyph">IRC</span><span class="palette-copy"><strong>IRC calculation</strong><small>Follow reaction path</small></span><span class="add-sign">+</span></button>
+          <button class="palette-item" data-add="single" data-kind="single"><span class="palette-glyph">SP</span><span class="palette-copy"><strong>Single point</strong><small>Refine electronic energy</small></span><span class="add-sign">+</span></button>
+          <div class="palette-group-label" style="margin-top:5px">LOGIC &amp; RECOVERY</div>
+          <button class="palette-item" data-add="condition" data-kind="condition"><span class="palette-glyph">IF</span><span class="palette-copy"><strong>Condition</strong><small>Route on an output value</small></span><span class="add-sign">+</span></button>
+          <button class="palette-item" data-add="review" data-kind="review"><span class="palette-glyph">REV</span><span class="palette-copy"><strong>Review &amp; refine</strong><small>Terminal recovery path</small></span><span class="add-sign">+</span></button>
+        </div>
+        <div class="palette-foot"><strong>Explicit by construction</strong>Dependencies form a readable recipe. Recovery starts a new attempt—never a loop.</div>
+      </aside>
+
+      <section class="panel recipe-panel" aria-label="Guided visual recipe">
+        <div class="recipe-head">
+          <div class="recipe-head-copy"><p class="eyebrow">Guided recipe</p><h2>TS verification</h2><span class="step-total" id="stepTotal">7 steps</span></div>
+          <span class="validation-state" id="validationState">Draft · not validated</span>
+          <button class="text-btn" id="resetBtn" title="Reset the sample recipe">Reset</button>
+        </div>
+        <div class="recipe-scroll" id="recipeScroll">
+          <div class="recipe-intro"><span>SEQUENTIAL CORE</span><span class="line"></span><span>nested decision paths</span></div>
+          <div class="recipe-list" id="recipe"></div>
+        </div>
+      </section>
+
+      <aside class="panel inspector-panel" aria-label="Run readiness and next action inspector">
+        <div class="inspector-head"><div><p class="eyebrow">Run inspector</p><h2>Readiness &amp; next action</h2></div><span class="local-chip">LOCAL</span></div>
+        <div class="inspector-scroll" id="inspector"></div>
+        <div class="inspector-disclaimer">Planning concept only. No Gaussian jobs are submitted or monitored.</div>
+      </aside>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"><span class="toast-icon" id="toastIcon">✓</span><span id="toastText"></span></div>
+
+  <script>
+    const blockTemplates = {
+      structure: { kind: 'structure', glyph: 'IN', title: 'Structure input', method: 'Unbound geometry source', input: 'Not bound', output: 'initial.xyz', status: 'blocked', reason: 'Choose a structure source', missingInput: true },
+      optimization: { kind: 'optimization', glyph: 'OPT', title: 'Optimization', method: 'B3LYP/6-31G(d) · Opt', input: 'Not bound', output: 'opt.chk', status: 'blocked', reason: 'Bind an input geometry', missingInput: true },
+      frequency: { kind: 'frequency', glyph: 'FREQ', title: 'Frequency analysis', method: 'B3LYP/6-31G(d) · Freq', input: 'Not bound', output: 'freq.log, modes', status: 'blocked', reason: 'Bind an optimized checkpoint', missingInput: true },
+      irc: { kind: 'irc', glyph: 'IRC', title: 'IRC calculation', method: 'B3LYP/6-31G(d) · IRC', input: 'Not bound', output: 'forward / reverse paths', status: 'blocked', reason: 'Bind a verified TS checkpoint', missingInput: true },
+      single: { kind: 'single', glyph: 'SP', title: 'Single point', method: 'CCSD(T)/6-311++G(d,p)', input: 'Not bound', output: 'refined energy', status: 'blocked', reason: 'Bind an input geometry', missingInput: true },
+      review: { kind: 'review', glyph: 'REV', title: 'Review & refine', method: 'Inspect modes · create a new attempt', input: 'Failed check', output: 'review notes', status: 'blocked', reason: 'Waiting for a decision', missingInput: true },
+      condition: { kind: 'condition', glyph: 'IF', title: 'Output condition', method: 'frequencies.imaginaryCount', input: 'Frequency result', output: 'TRUE / FALSE route', status: 'blocked', reason: 'Awaiting input value', operator: '==', value: '1', trueSteps: [], falseSteps: [] }
+    };
+
+    function initialSteps() {
+      return [
+        { id: 'structure', kind: 'structure', glyph: 'IN', title: 'Structure input', method: 'Endo TS guess · C₈H₉N · neutral singlet', input: 'DA_endo_TS_guess.xyz', output: 'initial geometry', status: 'passed', detail: 'Atomic symbols, connectivity guess, charge, and multiplicity are present.' },
+        { id: 'opt', kind: 'optimization', glyph: 'OPT', title: 'Transition-state optimization', method: 'B3LYP/6-31G(d) · Opt=(TS,CalcFC,NoEigen)', input: 'initial geometry', output: 'ts_opt.chk', status: 'passed', dependsOn: 'structure', detail: 'Converged saddle-point candidate. Normal termination and optimization gates passed.' },
+        { id: 'freq', kind: 'frequency', glyph: 'FREQ', title: 'Frequency analysis', method: 'B3LYP/6-31G(d) · Freq', input: 'ts_opt.chk', output: 'freq.log · imaginary modes', status: 'ready', dependsOn: 'opt', route: '#p B3LYP/6-31G(d) Freq Geom=AllCheck Guess=Read', detail: 'All upstream artifacts are available. Ready for an external Gaussian handoff.' },
+        { id: 'decision', kind: 'condition', glyph: 'IF', title: 'Exactly one imaginary mode?', method: 'Verify the TS signature before following the path', input: 'frequencies.imaginaryCount', output: 'TRUE / FALSE route', status: 'blocked', reason: 'Needs frequency analysis from step 03', dependsOn: 'freq', operator: '==', value: '1',
+          trueSteps: [
+            { id: 'irc', kind: 'irc', glyph: 'IRC', title: 'IRC path confirmation', method: 'B3LYP/6-31G(d) · IRC=RCFC · both directions', input: 'verified TS checkpoint', output: 'reactant / product endpoints', status: 'blocked', reason: 'Waiting for the TRUE branch', dependsOn: 'decision', route: '#p B3LYP/6-31G(d) IRC=(RCFC,MaxPoints=30) Geom=AllCheck', detail: 'Follows both directions only after the frequency gate confirms one imaginary mode.' },
+            { id: 'sp', kind: 'single', glyph: 'SP', title: 'High-level single point', method: 'CCSD(T)/6-311++G(d,p) · electronic energy', input: 'IRC-confirmed TS geometry', output: 'E(CCSD(T))', status: 'blocked', reason: 'Needs IRC path confirmation', dependsOn: 'irc', route: '#p CCSD(T)/6-311++G(d,p) SP Geom=AllCheck Guess=Read', detail: 'Refines the electronic energy after the transition state has been structurally verified.' }
+          ],
+          falseSteps: [
+            { id: 'review', kind: 'review', glyph: 'REV', title: 'Review & refine', method: 'Inspect modes · rebuild TS guess · new attempt', input: 'Frequency result + current geometry', output: 'Review notes / new attempt', status: 'blocked', reason: 'FALSE path · terminal, no cyclic loop', dependsOn: 'decision', detail: 'A failed TS signature stops this recipe. Refinement is explicitly a new attempt, not a loop back.' }
+          ]
+        }
+      ];
+    }
+
+    let steps = initialSteps();
+    let selectedId = 'freq';
+    let validation = { state: 'idle', issues: [] };
+    let handoffOpen = false;
+    let lastAddedId = null;
+    let toastTimer;
+
+    const recipeEl = document.getElementById('recipe');
+    const inspectorEl = document.getElementById('inspector');
+    const recipeScroll = document.getElementById('recipeScroll');
+    const validationEl = document.getElementById('validationState');
+    const stepTotalEl = document.getElementById('stepTotal');
+    let renderOrdinal = 0;
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
+    }
+
+    function findLocation(id, list = steps, parent = null, branch = null) {
+      for (let index = 0; index < list.length; index++) {
+        const step = list[index];
+        if (step.id === id) return { step, list, index, parent, branch };
+        if (step.kind === 'condition') {
+          const inTrue = findLocation(id, step.trueSteps, step, 'true');
+          if (inTrue) return inTrue;
+          const inFalse = findLocation(id, step.falseSteps, step, 'false');
+          if (inFalse) return inFalse;
+        }
+      }
+      return null;
+    }
+
+    function flatten(list = steps, output = []) {
+      list.forEach(step => {
+        output.push(step);
+        if (step.kind === 'condition') {
+          flatten(step.trueSteps, output);
+          flatten(step.falseSteps, output);
+        }
+      });
+      return output;
+    }
+
+    function statusPill(status) {
+      return `<span class="status-pill ${status}">${status}</span>`;
+    }
+
+    function falseLabel(step) {
+      const opposites = { '==': '≠', '!=': '=', '>': '≤', '>=': '<', '<': '≥', '<=': '>' };
+      return `FALSE · count ${opposites[step.operator] || 'not'} ${escapeHtml(step.value || '?')}`;
+    }
+
+    function trueLabel(step) {
+      const symbols = { '!=': '≠', '>=': '≥', '<=': '≤' };
+      return `TRUE · count ${symbols[step.operator] || step.operator} ${escapeHtml(step.value || '?')}`;
+    }
+
+    function connector(text) {
+      return `<div class="connector" aria-hidden="true"><span class="connector-label">${escapeHtml(text)}</span></div>`;
+    }
+
+    function renderStep(step, nested = false) {
+      const number = String(++renderOrdinal).padStart(2, '0');
+      const classes = `step ${step.kind === 'condition' ? 'condition-step' : ''} is-${step.status} ${selectedId === step.id ? 'selected' : ''} ${lastAddedId === step.id ? 'new-step-flash' : ''}`;
+      const next = step.status === 'ready' ? '<span class="next-label">NEXT</span>' : '';
+      const reason = step.status === 'blocked' && step.reason ? `<div class="blocked-reason">${escapeHtml(step.reason)}</div>` : '';
+      let html = `<article class="${classes}" data-id="${step.id}" data-kind="${step.kind}" tabindex="0" aria-label="${escapeHtml(step.title)}, ${step.status}">
+        <div class="step-head">
+          <span class="step-number">${number}</span>
+          <span class="block-glyph">${step.glyph}</span>
+          <div class="step-copy"><div class="step-title-line"><span class="step-title">${escapeHtml(step.title)}</span>${next}</div><div class="step-method">${escapeHtml(step.method)}</div>${reason}</div>
+          ${statusPill(step.status)}
+        </div>`;
+      if (step.kind === 'condition') {
+        html += `<div class="condition-expression" data-condition="${step.id}">
+          <span class="expression-if">IF</span><span class="expression-field">frequencies.imaginaryCount</span>
+          <select data-cond-op="${step.id}" aria-label="Condition operator">
+            ${['==','!=','>','>=','<','<='].map(op => `<option value="${op}" ${step.operator === op ? 'selected' : ''}>${op}</option>`).join('')}
+          </select>
+          <input data-cond-value="${step.id}" type="number" step="1" min="0" value="${escapeHtml(step.value)}" aria-label="Expected imaginary mode count">
+          <span class="expression-help">editable gate</span>
+        </div>
+        <div class="branches">
+          <div class="branch branch-true">
+            <div class="branch-label" data-true-label="${step.id}"><span class="branch-key">T</span>${trueLabel(step)}</div>
+            ${renderList(step.trueSteps, true)}
+          </div>
+          <div class="branch branch-false">
+            <div class="branch-label" data-false-label="${step.id}"><span class="branch-key">F</span>${falseLabel(step)}</div>
+            ${renderList(step.falseSteps, true)}
+            <div class="terminal-note">■ END · start a new attempt manually</div>
+          </div>
+        </div>`;
+      }
+      return html + '</article>';
+    }
+
+    function renderList(list, nested = false) {
+      if (!list.length) return '<div class="empty-branch">Empty branch · fails validation</div>';
+      const connectors = nested ? ['confirmed geometry'] : ['geometry accepted', 'ts_opt.chk', 'frequency outputs'];
+      return list.map((step, index) => {
+        const nextConnector = index < list.length - 1 ? connector(nested ? 'IRC-confirmed geometry' : (connectors[index] || 'output → input')) : '';
+        return renderStep(step, nested) + nextConnector;
+      }).join('');
+    }
+
+    function renderRecipe() {
+      renderOrdinal = 0;
+      recipeEl.innerHTML = renderList(steps);
+      const all = flatten();
+      stepTotalEl.textContent = `${all.length} steps`;
+      validationEl.className = `validation-state ${validation.state === 'idle' ? '' : validation.state}`;
+      validationEl.textContent = validation.state === 'valid' ? 'Structure valid' : validation.state === 'invalid' ? `${validation.issues.length} recipe issue${validation.issues.length === 1 ? '' : 's'}` : 'Draft · not validated';
+      lastAddedId = null;
+    }
+
+    function readinessSummary(all) {
+      return all.reduce((counts, step) => { counts[step.status] = (counts[step.status] || 0) + 1; return counts; }, { passed: 0, ready: 0, blocked: 0 });
+    }
+
+    function renderInspector() {
+      const all = flatten();
+      const counts = readinessSummary(all);
+      const selected = findLocation(selectedId)?.step || all[0];
+      const next = all.find(step => step.status === 'ready');
+      const coreSteps = steps.filter(step => step.kind !== 'condition');
+      const corePassed = coreSteps.filter(step => step.status === 'passed').length;
+      const percentage = coreSteps.length ? Math.round(corePassed / coreSteps.length * 100) : 0;
+      const location = findLocation(selected.id);
+      const blocked = all.filter(step => step.status === 'blocked');
+      const branchName = location?.branch ? `${location.branch.toUpperCase()} branch` : 'Sequential core';
+      let stateCallout = '';
+      if (selected.status === 'blocked') {
+        stateCallout = `<div class="dependency-callout"><strong>Why is this blocked?</strong><p>${escapeHtml(selected.reason || 'An upstream dependency has not produced its required output.')}</p></div>`;
+      } else if (selected.status === 'ready') {
+        stateCallout = '<div class="ready-callout">Dependencies satisfied. This is the next step eligible for external setup.</div>';
+      } else {
+        stateCallout = '<div class="passed-callout">Output gates passed. Downstream steps can consume this step’s declared output.</div>';
+      }
+      inspectorEl.innerHTML = `
+        <section class="inspector-section readiness-card">
+          <div class="readiness-top"><div class="progress-ring" style="--progress:${percentage}%"><span>${corePassed}/${coreSteps.length}</span></div><div class="readiness-copy"><strong>${counts.ready ? 'Ready to continue' : 'No step currently ready'}</strong><span>${percentage}% of core calculations passed</span></div></div>
+          <div class="status-counts"><div class="status-count passed"><b>${counts.passed}</b>passed</div><div class="status-count ready"><b>${counts.ready}</b>ready</div><div class="status-count"><b>${counts.blocked}</b>blocked</div></div>
+        </section>
+        ${next ? `<section class="inspector-section next-action">
+          <div class="next-action-head">NEXT ACTION · EXTERNAL HANDOFF</div>
+          <div class="next-action-body"><h3>${escapeHtml(next.title)}</h3><p>Use the converged TS checkpoint; verify normal termination when the external job finishes.</p><div class="route-preview">${escapeHtml(next.route || next.method)}</div><button class="secondary-btn" data-action="handoff">${handoffOpen ? 'Hide handoff checklist' : 'View handoff checklist'}</button></div>
+          ${handoffOpen ? `<div class="handoff"><strong>Before leaving GaussianHelper</strong><ul><li>Use ts_opt.chk from the passed optimization</li><li>Preserve the B3LYP/6-31G(d) level of theory</li><li>Return freq.log to evaluate the condition</li></ul></div>` : ''}
+        </section>` : ''}
+        <div class="section-label">Selected step</div>
+        <section class="selected-card">
+          <div class="selected-card-head"><div><h3>${escapeHtml(selected.title)}</h3><div class="selected-kind">${branchName} · ${selected.kind}</div></div>${statusPill(selected.status)}</div>
+          <dl class="detail-list"><div class="detail-row"><dt>Consumes</dt><dd>${escapeHtml(selected.input)}</dd></div><div class="detail-row"><dt>Produces</dt><dd>${escapeHtml(selected.output)}</dd></div>${selected.kind === 'condition' ? `<div class="detail-row"><dt>Gate</dt><dd>imaginaryCount ${escapeHtml(selected.operator)} ${escapeHtml(selected.value)}</dd></div>` : ''}</dl>
+          ${stateCallout}
+        </section>
+        <div class="section-label">Arrange recipe</div>
+        <div class="step-controls"><button class="secondary-btn" data-action="up" ${location.index === 0 ? 'disabled' : ''}>↑ Move up</button><button class="secondary-btn" data-action="down" ${location.index === location.list.length - 1 ? 'disabled' : ''}>↓ Move down</button></div>
+        <div class="section-label">Dependency guidance</div>
+        <div class="blocked-summary"><strong>${blocked.length} steps blocked</strong><span>Select any blocked step in the recipe to inspect its exact prerequisite.</span></div>`;
+    }
+
+    function renderAll() {
+      renderRecipe();
+      renderInspector();
+    }
+
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastText').textContent = message;
+      document.getElementById('toastIcon').textContent = type === 'error' ? '!' : '✓';
+      toast.className = `toast visible ${type}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.className = 'toast'; }, 3600);
+    }
+
+    function markDirty() {
+      validation = { state: 'idle', issues: [] };
+      handoffOpen = false;
+    }
+
+    document.querySelectorAll('[data-add]').forEach(button => {
+      button.addEventListener('click', () => {
+        const kind = button.dataset.add;
+        const template = blockTemplates[kind];
+        const newStep = JSON.parse(JSON.stringify(template));
+        newStep.id = `${kind}-${Date.now()}`;
+        const selectedLocation = findLocation(selectedId);
+        if (selectedLocation) selectedLocation.list.splice(selectedLocation.index + 1, 0, newStep);
+        else steps.push(newStep);
+        selectedId = newStep.id;
+        lastAddedId = newStep.id;
+        markDirty();
+        renderAll();
+        requestAnimationFrame(() => document.querySelector(`[data-id="${newStep.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+        showToast(`${newStep.title} inserted · input binding required`);
+      });
+    });
+
+    recipeEl.addEventListener('click', event => {
+      if (event.target.closest('select, input, button')) return;
+      const stepEl = event.target.closest('.step');
+      if (!stepEl) return;
+      selectedId = stepEl.dataset.id;
+      handoffOpen = false;
+      renderAll();
+    });
+
+    recipeEl.addEventListener('keydown', event => {
+      if ((event.key === 'Enter' || event.key === ' ') && event.target.classList.contains('step')) {
+        event.preventDefault();
+        selectedId = event.target.dataset.id;
+        renderAll();
+      }
+    });
+
+    function updateCondition(id, field, value) {
+      const step = findLocation(id)?.step;
+      if (!step || step.kind !== 'condition') return;
+      step[field] = value;
+      selectedId = id;
+      markDirty();
+      const trueEl = document.querySelector(`[data-true-label="${id}"]`);
+      const falseEl = document.querySelector(`[data-false-label="${id}"]`);
+      if (trueEl) trueEl.innerHTML = `<span class="branch-key">T</span>${trueLabel(step)}`;
+      if (falseEl) falseEl.innerHTML = `<span class="branch-key">F</span>${falseLabel(step)}`;
+      validationEl.className = 'validation-state';
+      validationEl.textContent = 'Draft · not validated';
+      renderInspector();
+    }
+
+    recipeEl.addEventListener('input', event => {
+      if (event.target.dataset.condValue) updateCondition(event.target.dataset.condValue, 'value', event.target.value);
+    });
+    recipeEl.addEventListener('change', event => {
+      if (event.target.dataset.condOp) updateCondition(event.target.dataset.condOp, 'operator', event.target.value);
+    });
+
+    inspectorEl.addEventListener('click', event => {
+      const selectTarget = event.target.closest('[data-select]');
+      if (selectTarget) {
+        selectedId = selectTarget.dataset.select;
+        handoffOpen = false;
+        renderAll();
+        document.querySelector(`[data-id="${selectedId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+      }
+      const action = event.target.closest('[data-action]')?.dataset.action;
+      if (!action) return;
+      if (action === 'handoff') {
+        handoffOpen = !handoffOpen;
+        renderInspector();
+        return;
+      }
+      const location = findLocation(selectedId);
+      if (!location) return;
+      const direction = action === 'up' ? -1 : 1;
+      const target = location.index + direction;
+      if (target < 0 || target >= location.list.length) return;
+      [location.list[location.index], location.list[target]] = [location.list[target], location.list[location.index]];
+      markDirty();
+      renderAll();
+      showToast(`${location.step.title} moved ${action}`);
+    });
+
+    inspectorEl.addEventListener('keydown', event => {
+      if ((event.key === 'Enter' || event.key === ' ') && event.target.dataset.select) {
+        event.preventDefault();
+        event.target.click();
+      }
+    });
+
+    document.getElementById('validateBtn').addEventListener('click', () => {
+      const issues = [];
+      const seen = new Set();
+      flatten().forEach(step => {
+        if (step.missingInput) issues.push(`${step.title}: bind an input`);
+        if (step.dependsOn && !seen.has(step.dependsOn)) issues.push(`${step.title}: dependency must precede this step`);
+        if (step.kind === 'condition') {
+          if (step.value === '' || Number(step.value) < 0) issues.push(`${step.title}: enter a non-negative expected count`);
+          if (!step.trueSteps.length || !step.falseSteps.length) issues.push(`${step.title}: both branches need a step`);
+        }
+        seen.add(step.id);
+      });
+      validation = { state: issues.length ? 'invalid' : 'valid', issues };
+      renderRecipe();
+      if (issues.length) showToast(issues[0] + (issues.length > 1 ? ` · ${issues.length - 1} more issue${issues.length > 2 ? 's' : ''}` : ''), 'error');
+      else showToast('Recipe valid · dependency order and both branches checked', 'success');
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      steps = initialSteps();
+      selectedId = 'freq';
+      validation = { state: 'idle', issues: [] };
+      handoffOpen = false;
+      recipeScroll.scrollTop = 0;
+      renderAll();
+      showToast('Diels–Alder sample restored');
+    });
+
+    renderAll();
+  </script>
+</body>
+</html>
