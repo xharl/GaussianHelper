@@ -6,6 +6,7 @@
  */
 
 import OCL from 'openchemlib';
+import { ensureChemResources } from './chemResources.js';
 
 /**
  * @typedef {Object} AtomCoord
@@ -74,11 +75,15 @@ function generate3DCoords(mol) {
     // Ensure the molecule has all implicit hydrogens added
     mol.addImplicitHydrogens();
 
-    // Try using the ConformerGenerator for true 3D coordinates
-    const gen = new OCL.ConformerGenerator(4);
-    const success = gen.getOneConformerAsMolecule(mol);
-    if (success) {
-      return { is3D: true };
+    // The conformer generator needs OCL's static torsion/bond tables. Without
+    // them it throws, and the old code silently fell back to a flat 2D layout
+    // for every molecule with rotatable bonds.
+    if (ensureChemResources()) {
+      const gen = new OCL.ConformerGenerator(4);
+      const success = gen.getOneConformerAsMolecule(mol);
+      if (success) {
+        return { is3D: true };
+      }
     }
   } catch (_err) {
     // 3D generation failed; fall through to 2D fallback

@@ -2710,3 +2710,135 @@
     scroll-behavior: auto;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   CONFORMER ENSEMBLE
+   ════════════════════════════════════════════════════════════ */
+
+.conformer-note {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  max-width: 80ch;
+}
+
+.conformer-disclaimer {
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.conformer-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+.conformer-controls .form-label {
+  margin: 0;
+}
+
+.conformer-count-input {
+  width: 84px;
+}
+
+.conformer-status {
+  margin-top: var(--space-2);
+  min-height: 1.2em;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.conformer-status-error {
+  color: #f87171;
+}
+
+.conformer-warning {
+  margin-top: var(--space-2);
+}
+
+.conformer-summary {
+  margin-top: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.conformer-table {
+  width: 100%;
+  margin-top: var(--space-2);
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.conformer-table th,
+.conformer-table td {
+  padding: 6px 8px;
+  text-align: right;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.conformer-table th:first-child,
+.conformer-table td:first-child {
+  width: 44px;
+  text-align: center;
+}
+
+.conformer-table th {
+  color: var(--text-tertiary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.conformer-table tbody tr:hover {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.conformer-row-active {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.conformer-unranked {
+  margin: var(--space-2) 0 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.viewer-ensemble-badge {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 2;
+  padding: 4px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: rgba(10, 11, 16, 0.8);
+  color: var(--text-secondary);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.workflow-conformer-queue {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.workflow-conformer-queue .workflow-field {
+  flex: 0 0 auto;
+}
+
+.workflow-conformer-queue .workflow-bundle-note {
+  flex-basis: 100%;
+}

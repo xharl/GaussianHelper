@@ -13,7 +13,7 @@ It runs entirely client-side, providing a fast, graphical tool for setting up in
 ## 🌟 Key Features
 
 - **3D Structure Viewer**: Interactive, premium 3D visualization using ball-and-stick, stick, or spacefill models.
-- **Conformer Generator**: Generate 3D coordinates instantly from any chemical SMILES string.
+- **Conformer Ensemble Generator**: Generate up to 50 conformers (10 by default) from a SMILES string or MOL file, minimise each with MMFF94, prune duplicate geometries by heavy-atom RMSD, and rank the survivors by Boltzmann population at 298.15 K. See [Conformer Ensembles](#-conformer-ensembles).
 - **Multi-Format Coordinate Parser**: Import structures from `.xyz` coordinate files, standard `.mol` / `.sdf` structures, or ChemDraw `.cdxml` drawings (extracting atomic positions, scaling coords, and handling implicit hydrogens).
 - **Theory Level Recommendations**: Smart recommendations for method/basis set combinations based on the calculation type (geometry optimization, energy, frequency, etc.) — helps users pick the right level of theory without deep DFT expertise.
 - **理论 & Parameter Setups**: Visual inputs for standard Link 0 commands (memory, processors, checkpoints), job types, method functionalities, basis sets, SCF models, integration grids, dispersion, solvation, and population analyses.
@@ -77,6 +77,20 @@ No software installation is required. Download `dist.zip` (Windows) or `dist.tar
    ./run.sh
    ```
 3. This spins up Python's built-in server and opens the browser. Hit `Ctrl+C` to terminate the server.
+
+## 🧬 Conformer Ensembles
+
+Loading a molecule still produces one 3D structure immediately. **Generate ensemble** in the *Conformer Ensemble* panel does the more honest thing: it generates up to the requested number of conformers with OpenChemLib's ETKDG-style generator (10 by default, hard cap 50, deterministic seed), minimises every conformer with **MMFF94**, prunes duplicate geometries by heavy-atom RMSD (0.5 Å), and sorts what remains by energy.
+
+The table shows each retained conformer's MMFF94 energy, its energy relative to the lowest conformer, its Boltzmann population at 298.15 K, and its heavy-atom RMSD to the lowest conformer. Choose a row with the radio button to load that geometry into the 3D viewer and the `.gjf` preview. When the spread across retained conformers exceeds **2 kcal/mol**, the panel warns that the reported value depends on conformer choice — because it does.
+
+The chosen conformer, its energy, its population, and the ensemble spread are recorded in the workflow task configuration (`conformer`), so a `.ghproject.json` file says which geometry produced which input. This block is provenance only: it is validated and bounded, and the generated Gaussian input is byte-identical with or without it. **Queue top-k conformers** in the Workflow Workbench creates one task per retained conformer, all sharing the same dependencies, so alternatives can be computed as siblings in the DAG.
+
+Limitations, stated plainly:
+
+- **Tautomers and protonation states are not enumerated.** OpenChemLib 9.22 has no tautomer generator (only canonicalisation flags), so the ensemble follows exactly the structure you enter. Charge and multiplicity define the species; a different protomer must be entered as a different structure. This is out of scope for the conformer feature rather than approximated with guessed chemistry.
+- MMFF94 energies are gas-phase force-field energies, not free energies, and the population table ranks a finite stochastic search — it is not a proof that the global minimum was found. If MMFF94 cannot type an atom (for example platinum) or minimisation does not converge, the energy is reported as **unavailable** and no populations are shown; nothing is estimated or filled in.
+- The MMFF94 parameter tables ship inside `openchemlib/dist/resources.json`, which the package does not expose as a subpath. `vite.config.js` aliases that file as `openchemlib-resources` so the portable offline build can rank conformers without a network fetch; this adds roughly 0.5 MB gzipped to the bundle.
 
 ## 🔬 Gaussian Output Inspector
 
