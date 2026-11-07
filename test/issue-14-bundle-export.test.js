@@ -125,7 +125,11 @@ describe('workflow bundle export', () => {
 
     const entries = readStoredZip(bundle.bytes);
     expect([...entries.keys()].sort()).toEqual([
-      'A.gjf', 'B.gjf', 'C.gjf', 'D.gjf', 'E.gjf',
+      'A.gjf', 'A.gjf.provenance.json',
+      'B.gjf', 'B.gjf.provenance.json',
+      'C.gjf', 'C.gjf.provenance.json',
+      'D.gjf', 'D.gjf.provenance.json',
+      'E.gjf', 'E.gjf.provenance.json',
       'manifest.json',
       'run-all.sh',
       'submit-pbs.sh', 'submit-slurm.sh',

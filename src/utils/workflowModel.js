@@ -11,6 +11,7 @@ import {
   MAX_ROUTE_TOKENS,
 } from '../parsers/gaussianLogParser.js';
 import { normalizeConformerMetadata, validateConformerMetadata } from './conformerMetadata.js';
+import { normalizeCompactProvenance, validateCompactProvenance } from './provenance.js';
 
 export const WORKFLOW_SCHEMA_VERSION = 1;
 export const MAX_WORKFLOW_TASKS = 100;
@@ -85,6 +86,13 @@ export function createWorkflowTask(config, options = {}) {
   } else {
     delete snapshot.conformer;
   }
+  // Provenance is optional and bounded: it records the last export that wrote
+  // this task's input, so it can be shown per task and round-tripped.
+  let provenance = null;
+  if (options.provenance !== undefined && options.provenance !== null) {
+    provenance = normalizeCompactProvenance(options.provenance);
+    if (!provenance) throw new TypeError('Workflow task provenance is invalid.');
+  }
   const routeText = `${snapshot.route.jobType || ''} ${snapshot.route.custom || ''}`;
   const title = String(options.title ?? snapshot.title ?? 'Gaussian calculation').trim() || 'Gaussian calculation';
   return {
@@ -110,6 +118,7 @@ export function createWorkflowTask(config, options = {}) {
     },
     activeAttemptId: null,
     lastExportedAt: null,
+    provenance,
     attempts: [],
   };
 }
@@ -214,6 +223,13 @@ export function validateWorkflowProject(project) {
         for (const message of validateConformerMetadata(task.config.conformer)) {
           errors.push(`Task "${task.id}" conformer provenance: ${message}.`);
         }
+      }
+    }
+    // Provenance is optional (older projects predate it); when present it must
+    // be the bounded compact record, never an arbitrary JSON blob.
+    if (task.provenance !== undefined && task.provenance !== null) {
+      for (const message of validateCompactProvenance(task.provenance)) {
+        errors.push(`Task "${task.id || '?'}" provenance: ${message}.`);
       }
     }
     if (!Array.isArray(task.dependencies)) {
@@ -370,6 +386,9 @@ export function invalidateTaskAndDescendants(project, taskId) {
     if (invalidatedIds.has(task.id)) {
       task.activeAttemptId = null;
       task.lastExportedAt = null;
+      // The recorded provenance describes the previous export; the config or
+      // dependencies just changed, so keeping it would misattribute the input.
+      task.provenance = null;
     }
   }
   next.updatedAt = new Date().toISOString();
@@ -647,6 +666,7 @@ function sanitizeWorkflowProject(project) {
       },
       activeAttemptId: task.activeAttemptId || null,
       lastExportedAt: task.lastExportedAt || null,
+      provenance: task.provenance ? normalizeCompactProvenance(task.provenance) : null,
       attempts: task.attempts.map(attempt => ({
         id: attempt.id,
         outputFilename: attempt.outputFilename,

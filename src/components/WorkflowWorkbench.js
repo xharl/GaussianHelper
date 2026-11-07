@@ -2,7 +2,8 @@ import { parseGaussianLogStream, parseGaussianLogText } from '../parsers/gaussia
 import { buildLink1Input } from '../generators/gjfGenerator.js';
 import { evaluateWorkflowOutput } from '../utils/workflowGates.js';
 import { buildWorkflowBundle } from '../utils/bundleExport.js';
-import { buildTaskInputText } from '../utils/workflowInput.js';
+import { buildTaskInputText, buildTaskProvenanceRecord } from '../utils/workflowInput.js';
+import { PROVENANCE_SUFFIX, createCompactProvenance, stringifyProvenanceRecord } from '../utils/provenance.js';
 import { escapeHtml } from './GaussianOutputInspector.js';
 import {
   createWorkflowProject,
@@ -245,6 +246,7 @@ export class WorkflowWorkbench {
           ${state === 'blocked' ? `<div class="workflow-blocked-reason">Waiting for: ${blockedBy.map(escapeHtml).join(', ')}</div>` : ''}
           <div class="workflow-task-files"><span>Input: <code>${escapeHtml(task.inputName)}</code></span><span>Output: <code>${escapeHtml(task.outputName)}</code></span>
             <span>Checkpoint: <code>${escapeHtml(task.config.link0?.checkpoint || 'none')}</code></span></div>
+          ${this.renderProvenance(task)}
           <div class="workflow-edit-grid">
             <label class="workflow-field"><span>Depends on</span>
               <select class="form-input" multiple size="3" data-task-dependencies="${escapeHtml(task.id)}">${dependencyOptions}</select>
@@ -284,6 +286,34 @@ export class WorkflowWorkbench {
         </div>
       </article>
     `;
+  }
+
+  /**
+   * One compact provenance line per task. Values come from the bounded record
+   * written by the last export; nothing is recomputed here, so the display
+   * cannot drift from the sidecar on disk.
+   */
+  renderProvenance(task) {
+    const record = task.provenance;
+    if (!record) {
+      return `<p class="workflow-provenance workflow-provenance-empty">Provenance: not recorded yet. Download this input to write <code>${escapeHtml(`${task.inputName}${PROVENANCE_SUFFIX}`)}</code>.</p>`;
+    }
+    const source = record.geometrySource;
+    const geometry = source.kind === 'file' || source.kind === 'checkpoint'
+      ? `${source.kind}${source.filename ? ` · ${source.filename}` : ''}`
+      : source.kind;
+    const conformer = record.conformer
+      ? `#${record.conformer.index} · ${record.conformer.energyKcal == null ? 'energy unavailable' : `${record.conformer.energyKcal.toFixed(4)} kcal/mol`}`
+        + `${record.conformer.population == null ? '' : ` · population ${(record.conformer.population * 100).toFixed(1)}%`}`
+        + `${record.conformer.ensembleSpreadKcal == null ? '' : ` · spread ${record.conformer.ensembleSpreadKcal.toFixed(2)} kcal/mol`}`
+      : 'none recorded';
+    return `<div class="workflow-provenance">
+      <span><strong>Provenance</strong> · generated <code>${escapeHtml(record.generatedAt)}</code></span>
+      <span>GaussianHelper ${escapeHtml(record.app.version)} @ <code>${escapeHtml(record.app.commit)}</code></span>
+      <span>geometry: <code>${escapeHtml(geometry)}</code></span>
+      <span>conformer: <code>${escapeHtml(conformer)}</code></span>
+      <span>SHA-256: <code>${escapeHtml(record.inputSha256)}</code></span>
+    </div>`;
   }
 
   renderAttempt(attempt) {
@@ -649,8 +679,12 @@ export class WorkflowWorkbench {
 
   downloadTask(taskId) {
     let gjf;
+    let provenance;
     try {
       gjf = this.buildTaskInput(taskId);
+      // Hash exactly the bytes downloaded below; the record is built before any
+      // state changes so a failure leaves the task ready to retry.
+      provenance = buildTaskProvenanceRecord(this.project, taskId, { inputText: gjf, requireReady: true });
     } catch (error) {
       this.statusMessage = error instanceof Error ? error.message : String(error);
       this.render();
@@ -658,6 +692,17 @@ export class WorkflowWorkbench {
     }
     const task = this.project.tasks.find(item => item.id === taskId);
     downloadTextFile(gjf, task.inputName, 'text/plain;charset=utf-8');
+    downloadTextFile(
+      stringifyProvenanceRecord(provenance),
+      `${task.inputName}${PROVENANCE_SUFFIX}`,
+      'application/json;charset=utf-8',
+    );
+    this.project = {
+      ...this.project,
+      tasks: this.project.tasks.map(item => item.id === taskId
+        ? { ...item, provenance: createCompactProvenance(provenance) }
+        : item),
+    };
     return this.markTaskAwaitingOutput(taskId);
   }
 

@@ -1,10 +1,11 @@
 /**
  * @fileoverview Whole-workflow bundle export.
  *
- * A bundle is a single ZIP containing every task input, a data-only
- * `manifest.json` describing the DAG and gates, and inert scheduler templates.
- * Gate evaluation stays in the browser: the exported scripts never parse
- * Gaussian output, so they cannot claim a calculation passed.
+ * A bundle is a single ZIP containing every task input, a per-input
+ * `.provenance.json` sidecar, a data-only `manifest.json` describing the DAG
+ * and gates, and inert scheduler templates. Gate evaluation stays in the
+ * browser: the exported scripts never parse Gaussian output, so they cannot
+ * claim a calculation passed.
  */
 
 import {
@@ -12,7 +13,8 @@ import {
   validateWorkflowProject,
   WORKFLOW_SCHEMA_VERSION,
 } from './workflowModel.js';
-import { buildTaskInputText } from './workflowInput.js';
+import { buildTaskInputText, buildTaskProvenanceRecord } from './workflowInput.js';
+import { PROVENANCE_SUFFIX, stringifyProvenanceRecord } from './provenance.js';
 import { createZip } from './zipWriter.js';
 
 export const BUNDLE_SCHEMA_VERSION = 1;
@@ -47,9 +49,16 @@ export function buildWorkflowBundle(project, options = {}) {
     { name: BUNDLE_MANIFEST_NAME, data: `${JSON.stringify(manifest, null, 2)}\n` },
   ];
   for (const task of ordered) {
+    const inputText = buildTaskInputText(project, task.id, { requireReady: false });
+    entries.push({ name: task.inputName, data: inputText });
+    // One sidecar per input, hashing exactly the bytes written beside it.
     entries.push({
-      name: task.inputName,
-      data: buildTaskInputText(project, task.id, { requireReady: false }),
+      name: `${task.inputName}${PROVENANCE_SUFFIX}`,
+      data: stringifyProvenanceRecord(buildTaskProvenanceRecord(project, task.id, {
+        inputText,
+        generatedAt,
+        requireReady: false,
+      })),
     });
   }
 
@@ -102,6 +111,7 @@ export function buildBundleManifest(project, options = {}) {
       dependencies: [...task.dependencies],
       input: task.inputName,
       output: task.outputName,
+      provenance: `${task.inputName}${PROVENANCE_SUFFIX}`,
       checkpoint: task.config?.link0?.checkpoint || null,
       checkpointFromTaskId: task.checkpointFromTaskId || null,
       gates: { ...task.gates },
