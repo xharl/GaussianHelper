@@ -21,7 +21,7 @@ It runs entirely client-side, providing a fast, graphical tool for setting up in
   - **Windows Batch Control Files** (`.bcf`) for Gaussian's native queuing.
   - **Linux Shell Scripts** (`.sh`) for sequential terminal executions (includes start/end timestamp echoes and completion checks).
 - **Gaussian Output Inspector**: Inspect multiple `.log` / `.out` files locally. Summarize termination, SCF energy/convergence, optimization markers, frequencies, thermochemistry (ZPE and H/G totals with temperature/pressure), warnings, and errors with source line evidence; export a batch CSV report.
-- **Workflow Workbench**: Organize calculation snapshots as a dependency graph, link checkpoint files with `%OldChk`, export only ready steps (or a single `--Link1--` chain when requested), export the whole workflow as a `.zip` bundle with a DAG manifest and scheduler templates, import logs for explicit validation gates, and save/load a portable local project file.
+- **Workflow Workbench**: Organize calculation snapshots as a dependency graph, link checkpoint files with `%OldChk`, export only ready steps (or a single `--Link1--` chain when requested), export the whole workflow as a `.zip` bundle with a DAG manifest and scheduler templates, import logs for explicit validation gates, and save/load a portable local project file. Every input download also writes a `<input>.provenance.json` sidecar (app version + commit, timestamp, method/basis/dispersion/solvation/grid/SCF, charge/multiplicity, atom count + Hill formula, geometry source, conformer/ensemble, task ids, and the SHA-256 of the `.gjf`).
 - **CORS-Bypassing Portable Launchers**:
   - `run.bat` for Windows (uses native PowerShell and .NET listener).
   - `run.sh` for Linux (uses system-native Python 3/2 HTTP server).
@@ -92,6 +92,24 @@ Limitations, stated plainly:
 - MMFF94 energies are gas-phase force-field energies, not free energies, and the population table ranks a finite stochastic search — it is not a proof that the global minimum was found. If MMFF94 cannot type an atom (for example platinum) or minimisation does not converge, the energy is reported as **unavailable** and no populations are shown; nothing is estimated or filled in.
 - The MMFF94 parameter tables ship inside `openchemlib/dist/resources.json`, which the package does not expose as a subpath. `vite.config.js` aliases that file as `openchemlib-resources` so the portable offline build can rank conformers without a network fetch; this adds roughly 0.5 MB gzipped to the bundle.
 
+## 🧾 Provenance Manifests
+
+Every exported input is accompanied by `<input>.provenance.json` — a pretty-printed, key-sorted record that says what was run and where it came from:
+
+- **Program**: app name, version from `package.json`, and the short git commit injected at build time (`vite.config.js`); a source checkout or tarball without git metadata records `"commit": "unknown"` rather than inventing one.
+- **Generation**: one ISO timestamp. The record contains no other volatile data, so two exports of the same job differ only in `generatedAt`.
+- **Route**: method, basis set (`GenECP` for mixed-basis inputs), job type, dispersion, solvation, grid, SCF, population, and custom keywords, trimmed rather than silently normalised.
+- **Molecule**: charge, multiplicity, atom count, and Hill formula. `Geom=AllCheck` inputs write no molecule specification, so those fields are `null`/`0` there; `Geom=Checkpoint` inputs omit coordinates but keep charge/multiplicity.
+- **Geometry source**: `drawn`, `smiles` (with the SMILES string), `file` (with the filename), `checkpoint`, or `unknown`. The Workbench only knows `checkpoint` when the route reads one; a project file does not record how a structure was entered, so anything else stays `unknown` with a note instead of guessing.
+- **Conformer/ensemble**: index, MMFF94 energy, population, relative energy, and ensemble spread when the task recorded them; `null` otherwise.
+- **Tautomer/protomer**: always `null`, with an explicit note that enumeration is not implemented.
+- **Task identity**: task id and parent task ids.
+- **Input hash**: lowercase SHA-256 of the exact `.gjf` text written beside the sidecar (including `%OldChk` for checkpoint-dependent tasks), so a later edit to the input is detectable.
+
+The Workbench shows the bounded subset (timestamp, app version + commit, geometry source, conformer, input SHA-256) under each task. The compact record is stored per task in `.ghproject.json`, is validated on load, and is cleared when the task's configuration or dependencies change so it cannot describe a stale input. Bundle export writes the full sidecar for every task and lists each filename in `manifest.json`.
+
+The sidecar describes the **input**; imported logs remain separate, bounded attempt evidence in the project file. Merging parsed results into the sidecar is deliberately not done, because the sidecar is written before the calculation runs.
+
 ## 🔬 Gaussian Output Inspector
 
 Open the **Output Inspector** tab and drop or select multiple Gaussian `.log` / `.out` files. Files are read locally in the browser; the app does not upload or persist them. The inspector reports termination markers, SCF energies and explicit convergence text, optimization markers, frequencies (including negative-mode values, and a saddle-threshold verdict when a `minImaginaryMagnitude` is supplied by the caller), the echoed route keywords with their source line, the `%Chk` / `%OldChk` filenames echoed in the log header, and matching warnings/errors with line references. Export the section-level comparison as CSV.
@@ -114,8 +132,8 @@ The browser does **not** run Gaussian or stop an external batch job. It exports 
 
 **Export bundle** downloads one `<project>.workflow.zip` containing the inputs for **every** task, including blocked or already-exported tasks. This intentionally differs from the single-task download, which offers only a `ready` step so validation stays sequential; exporting a bundle does not mark any task as awaiting output. The archive contains:
 
-- every task's `.gjf`, named per its `inputName`;
-- `manifest.json` — data only: schema version, generation timestamp, project name, task ids/titles/dependencies, input/output/checkpoint filenames, checkpoint sources, configured gates, and the DAG edges. No gate logic is embedded;
+- every task's `.gjf`, named per its `inputName`, plus `<input>.provenance.json` with the full provenance record for that input;
+- `manifest.json` — data only: schema version, generation timestamp, project name, task ids/titles/dependencies, input/output/provenance/checkpoint filenames, checkpoint sources, configured gates, and the DAG edges. No gate logic is embedded;
 - `submit-slurm.sh` plus one `task-<id>.slurm` per task, and `submit-pbs.sh` plus one `task-<id>.pbs` per task. Both submit scripts capture each job id and chain dependents with `afterok`, so a diamond `A → B, A → C, B + C → D` is submitted as B and C after A, then D after both;
 - `run-all.sh`, a fully commented plain-bash sequence for running the inputs in topological order.
 
