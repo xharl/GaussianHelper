@@ -46,6 +46,20 @@ export function evaluateWorkflowOutput(task, section) {
     ));
   }
 
+  if (task.gates.requireThermochemistry) {
+    const thermochemistry = section.thermochemistry;
+    const totals = thermochemistry?.totalsHartree || {};
+    const hasTotals = ['zpe', 'enthalpy', 'gibbs'].every(key => Number.isFinite(totals[key]));
+    const failure = thermochemistry?.failure;
+    gates.push(makeGate(
+      'Thermochemistry',
+      true,
+      failure ? 'fail' : hasTotals ? 'pass' : 'unknown',
+      failure?.line ?? thermochemistry?.line ?? null,
+      failure?.evidence ?? thermochemistry?.evidence ?? null,
+    ));
+  }
+
   if (task.gates.expectedImaginaryModes !== null && task.gates.expectedImaginaryModes !== undefined) {
     const frequencyCount = section.frequencies?.count;
     const modeCount = section.frequencies?.imaginaryCount;

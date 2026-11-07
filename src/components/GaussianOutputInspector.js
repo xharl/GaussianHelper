@@ -5,7 +5,12 @@ const CSV_HEADERS = [
   'scf_energy_hartree', 'scf_records', 'scf_line', 'scf_evidence', 'optimization_status',
   'optimization_line', 'optimization_evidence', 'frequency_count', 'imaginary_count',
   'most_negative_frequency_cm-1', 'imaginary_frequencies_cm-1', 'omitted_imaginary_values',
-  'frequency_line', 'frequency_evidence', 'diagnostics',
+  'frequency_line', 'frequency_evidence', 'thermochemistry_zero_point_hartree',
+  'thermochemistry_thermal_energy_hartree', 'thermochemistry_thermal_enthalpy_hartree',
+  'thermochemistry_thermal_gibbs_hartree', 'thermochemistry_zpe_total_hartree',
+  'thermochemistry_energy_total_hartree', 'thermochemistry_enthalpy_total_hartree',
+  'thermochemistry_gibbs_total_hartree', 'temperature_k', 'pressure_atm',
+  'thermochemistry_line', 'thermochemistry_evidence', 'diagnostics',
 ];
 
 export function escapeHtml(value) {
@@ -54,6 +59,18 @@ export function formatGaussianResultsCsv(results) {
         section.frequencies.omittedImaginaryValues ?? 0,
         section.frequencies.line ?? '',
         section.frequencies.evidence ?? '',
+        section.thermochemistry?.zeroPointHartree ?? '',
+        section.thermochemistry?.thermalCorrectionHartree?.energy ?? '',
+        section.thermochemistry?.thermalCorrectionHartree?.enthalpy ?? '',
+        section.thermochemistry?.thermalCorrectionHartree?.gibbs ?? '',
+        section.thermochemistry?.totalsHartree?.zpe ?? '',
+        section.thermochemistry?.totalsHartree?.energy ?? '',
+        section.thermochemistry?.totalsHartree?.enthalpy ?? '',
+        section.thermochemistry?.totalsHartree?.gibbs ?? '',
+        section.thermochemistry?.temperatureK ?? '',
+        section.thermochemistry?.pressureAtm ?? '',
+        section.thermochemistry?.line ?? '',
+        section.thermochemistry?.evidence ?? '',
         diagnostics,
       ];
       rows.push(values.map(csvCell).join(','));
@@ -83,6 +100,26 @@ function formatFrequency(section) {
 function formatEnergy(energy) {
   if (!Number.isFinite(energy)) return 'Not found';
   return `${energy} Hartree`;
+}
+
+function renderThermochemistry(section) {
+  const thermochemistry = section.thermochemistry;
+  const totals = thermochemistry?.totalsHartree;
+  if (!totals || ![totals.zpe, totals.enthalpy, totals.gibbs].some(value => Number.isFinite(value))) {
+    return '<div><strong>Thermochemistry:</strong> Not found</div>';
+  }
+  const rows = [];
+  if (Number.isFinite(totals.zpe)) rows.push(`<div><strong>ZPE total:</strong> ${escapeHtml(totals.zpe)} Hartree</div>`);
+  if (Number.isFinite(totals.enthalpy)) rows.push(`<div><strong>H total:</strong> ${escapeHtml(totals.enthalpy)} Hartree</div>`);
+  if (Number.isFinite(totals.gibbs)) rows.push(`<div><strong>G total:</strong> ${escapeHtml(totals.gibbs)} Hartree</div>`);
+  const conditions = [];
+  if (Number.isFinite(thermochemistry.temperatureK)) conditions.push(`${thermochemistry.temperatureK} K`);
+  if (Number.isFinite(thermochemistry.pressureAtm)) conditions.push(`${thermochemistry.pressureAtm} Atm`);
+  if (conditions.length > 0) {
+    const line = Number.isInteger(thermochemistry.line) ? ` · line ${thermochemistry.line}` : '';
+    rows.push(`<div><strong>Thermochemistry conditions:</strong> ${escapeHtml(conditions.join(' · '))}${line}</div>`);
+  }
+  return rows.join('');
 }
 
 export class GaussianOutputInspector {
@@ -249,6 +286,12 @@ export class GaussianOutputInspector {
     const freqEvidence = section.frequencies.evidence
       ? `<details class="inspector-evidence"><summary>Frequency source, line ${section.frequencies.line}</summary><code>${escapeHtml(section.frequencies.evidence)}</code></details>`
       : '';
+    const thermoEvidence = section.thermochemistry?.evidence
+      ? `<details class="inspector-evidence"><summary>Thermochemistry source, line ${section.thermochemistry.line}</summary><code>${escapeHtml(section.thermochemistry.evidence)}</code></details>`
+      : '';
+    const thermoFailure = section.thermochemistry?.failure
+      ? `<div class="form-warning">Thermochemistry failure, line ${section.thermochemistry.failure.line}: <code>${escapeHtml(section.thermochemistry.failure.evidence)}</code></div>`
+      : '';
     const termination = section.termination
       ? `<div><strong>Termination:</strong> line ${section.termination.line} — <code>${escapeHtml(section.termination.text)}</code></div>`
       : '<div><strong>Termination:</strong> no termination marker found</div>';
@@ -267,9 +310,10 @@ export class GaussianOutputInspector {
           <div><strong>SCF:</strong> ${escapeHtml(section.scf.status)} · ${escapeHtml(section.scf.method || 'method not found')} · ${escapeHtml(scfEnergy)}${section.scf.line ? ` · line ${section.scf.line}` : ''}</div>
           <div><strong>Optimization:</strong> ${escapeHtml(section.optimization.status)}${section.optimization.line ? ` · line ${section.optimization.line}` : ''}</div>
           <div><strong>Frequencies:</strong> ${escapeHtml(formatFrequency(section))}${escapeHtml(imaginaryValueText)}</div>
+          ${renderThermochemistry(section)}
           ${termination}
         </div>
-        ${scfEvidence}${optEvidence}${freqEvidence}${diagnostics}
+        ${scfEvidence}${optEvidence}${freqEvidence}${thermoEvidence}${thermoFailure}${diagnostics}
       </details>
     `;
   }

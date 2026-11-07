@@ -8,9 +8,63 @@ const SCF_DONE_RE = new RegExp(
   'i',
 );
 const NUMBER_RE = new RegExp(NUMBER_PATTERN, 'g');
+const TEMPERATURE_RE = new RegExp(`\\bTemperature\\s+(${NUMBER_PATTERN})\\s*Kelvin`, 'i');
+const PRESSURE_RE = new RegExp(`\\bPressure\\s+(${NUMBER_PATTERN})\\s*Atm`, 'i');
+const THERMOCHEMISTRY_FAILURE_RE = new RegExp(
+  '(?:\\bthermochem\\w*\\b[^\\r\\n]{0,120}?\\b(?:fail(?:ed|ure)?|not\\s+computed|not\\s+available|unable\\s+to|could\\s+not)\\b'
+  + '|\\b(?:fail(?:ed|ure)?|unable\\s+to|could\\s+not)\\b[^\\r\\n]{0,120}?\\bthermochem\\w*\\b)',
+  'i',
+);
+const THERMOCHEMISTRY_ENTRIES = [
+  {
+    pattern: new RegExp(`^\\s*Zero-point correction\\s*=\\s*(${NUMBER_PATTERN})`, 'i'),
+    apply: (block, value) => { block.zeroPointHartree = value; },
+  },
+  {
+    pattern: new RegExp(`^\\s*Thermal correction to Energy\\s*=\\s*(${NUMBER_PATTERN})`, 'i'),
+    apply: (block, value) => { block.thermalCorrectionHartree.energy = value; },
+  },
+  {
+    pattern: new RegExp(`^\\s*Thermal correction to Enthalpy\\s*=\\s*(${NUMBER_PATTERN})`, 'i'),
+    apply: (block, value) => { block.thermalCorrectionHartree.enthalpy = value; },
+  },
+  {
+    pattern: new RegExp(`^\\s*Thermal correction to Gibbs Free Energy\\s*=\\s*(${NUMBER_PATTERN})`, 'i'),
+    apply: (block, value) => { block.thermalCorrectionHartree.gibbs = value; },
+  },
+  {
+    pattern: new RegExp(`^\\s*Sum of electronic and zero-point Energies\\s*=\\s*(${NUMBER_PATTERN})`, 'i'),
+    apply: (block, value) => { block.totalsHartree.zpe = value; },
+  },
+  {
+    pattern: new RegExp(`^\\s*Sum of electronic and thermal Energies\\s*=\\s*(${NUMBER_PATTERN})`, 'i'),
+    apply: (block, value) => { block.totalsHartree.energy = value; },
+  },
+  {
+    pattern: new RegExp(`^\\s*Sum of electronic and thermal Enthalpies\\s*=\\s*(${NUMBER_PATTERN})`, 'i'),
+    apply: (block, value) => { block.totalsHartree.enthalpy = value; },
+  },
+  {
+    pattern: new RegExp(`^\\s*Sum of electronic and thermal Free Energies\\s*=\\s*(${NUMBER_PATTERN})`, 'i'),
+    apply: (block, value) => { block.totalsHartree.gibbs = value; },
+  },
+];
 
 function toNumber(token) {
   return Number(token.replace(/[dD]/g, 'E'));
+}
+
+function makeThermochemistry() {
+  return {
+    zeroPointHartree: null,
+    thermalCorrectionHartree: { energy: null, enthalpy: null, gibbs: null },
+    totalsHartree: { zpe: null, energy: null, enthalpy: null, gibbs: null },
+    temperatureK: null,
+    pressureAtm: null,
+    line: null,
+    evidence: null,
+    failure: null,
+  };
 }
 
 function clipLine(line) {
@@ -43,6 +97,7 @@ function makeSection(index) {
       evidence: null,
       hasRecord: false,
     },
+    thermochemistry: makeThermochemistry(),
     diagnostics: [],
     omittedDiagnostics: 0,
     hasContent: false,
@@ -64,6 +119,16 @@ function publicSection(section) {
       minImaginary: section.frequencies.minImaginary,
       line: section.frequencies.line,
       evidence: section.frequencies.evidence,
+    },
+    thermochemistry: {
+      zeroPointHartree: section.thermochemistry.zeroPointHartree,
+      thermalCorrectionHartree: { ...section.thermochemistry.thermalCorrectionHartree },
+      totalsHartree: { ...section.thermochemistry.totalsHartree },
+      temperatureK: section.thermochemistry.temperatureK,
+      pressureAtm: section.thermochemistry.pressureAtm,
+      line: section.thermochemistry.line,
+      evidence: section.thermochemistry.evidence,
+      failure: section.thermochemistry.failure ? { ...section.thermochemistry.failure } : null,
     },
     diagnostics: section.diagnostics.map(item => ({ ...item })),
     omittedDiagnostics: section.omittedDiagnostics,
@@ -144,6 +209,13 @@ export class GaussianLogParser {
       }
     }
 
+    if (/^\s*--Link1--\s*$/i.test(line)) {
+      // A new Gaussian link starts a new job; thermochemistry from the prior link must not bleed into it.
+      this.current.thermochemistry = makeThermochemistry();
+    }
+
+    this.recordThermochemistry(line);
+
     const isGaussianLicenseNotice = /\bWarning\s+--\s+This program may not be used in any manner\b/i.test(line);
     if (!isGaussianLicenseNotice
       && /\b(?:Warning|Error|failed|failure|no convergence|not converged)\b/i.test(line)
@@ -156,6 +228,38 @@ export class GaussianLogParser {
       this.closeSection('error', line);
     } else if (/\bNormal termination of Gaussian\b/i.test(line)) {
       this.closeSection('completed', line);
+    }
+  }
+
+  recordThermochemistry(line) {
+    const block = this.current.thermochemistry;
+    for (const entry of THERMOCHEMISTRY_ENTRIES) {
+      const match = line.match(entry.pattern);
+      if (!match) continue;
+      const value = toNumber(match[1]);
+      if (!Number.isFinite(value)) return;
+      entry.apply(block, value);
+      // Keep the last recognized line: the free-energy total is printed last in a complete block.
+      block.line = this.lineNumber;
+      block.evidence = clipLine(line);
+      return;
+    }
+
+    const temperature = line.match(TEMPERATURE_RE);
+    const pressure = line.match(PRESSURE_RE);
+    if (temperature || pressure) {
+      const temperatureK = temperature ? toNumber(temperature[1]) : null;
+      const pressureAtm = pressure ? toNumber(pressure[1]) : null;
+      if (Number.isFinite(temperatureK)) block.temperatureK = temperatureK;
+      if (Number.isFinite(pressureAtm)) block.pressureAtm = pressureAtm;
+      if (Number.isFinite(temperatureK) || Number.isFinite(pressureAtm)) {
+        block.line = this.lineNumber;
+        block.evidence = clipLine(line);
+      }
+    }
+
+    if (!block.failure && THERMOCHEMISTRY_FAILURE_RE.test(line)) {
+      block.failure = { line: this.lineNumber, evidence: clipLine(line) };
     }
   }
 

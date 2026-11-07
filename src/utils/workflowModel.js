@@ -49,6 +49,7 @@ export function createWorkflowTask(config, options = {}) {
       requireScfRecord: false,
       requireOptimizationComplete: /(?:^|\s)Opt(?:\b|=)/i.test(routeText),
       requireFrequencyRecord: /(?:^|\s)Freq(?:\b|=)/i.test(routeText),
+      requireThermochemistry: /(?:^|\s)Freq(?:\b|=)/i.test(routeText),
       expectedImaginaryModes: null,
       ...options.gates,
       // Always required; not user-configurable in v1. Declared after the spread so a
@@ -177,6 +178,9 @@ export function validateWorkflowProject(project) {
       || typeof task.gates.requireScfRecord !== 'boolean'
       || typeof task.gates.requireOptimizationComplete !== 'boolean'
       || typeof task.gates.requireFrequencyRecord !== 'boolean'
+      // Older v1 project files predate this gate; a missing flag is derived from the route on load.
+      || (task.gates.requireThermochemistry !== undefined
+        && typeof task.gates.requireThermochemistry !== 'boolean')
       || (task.gates.expectedImaginaryModes !== null
         && (!Number.isInteger(task.gates.expectedImaginaryModes) || task.gates.expectedImaginaryModes < 0))) {
       errors.push(`Task "${task.id || '?'}" has invalid validation gates.`);
@@ -186,6 +190,9 @@ export function validateWorkflowProject(project) {
       }
       if (routeHasKeyword(task.config, 'Freq') && !task.gates.requireFrequencyRecord) {
         errors.push(`Task "${task.id}" Freq route requires the frequency gate.`);
+      }
+      if (routeHasKeyword(task.config, 'Freq') && task.gates.requireThermochemistry === false) {
+        errors.push(`Task "${task.id}" Freq route requires the thermochemistry gate.`);
       }
     }
     if (task.activeAttemptId !== null && task.activeAttemptId !== undefined
@@ -399,6 +406,8 @@ function validateParsedSection(section) {
     || !Number.isInteger(frequencies.omittedImaginaryValues) || frequencies.omittedImaginaryValues < 0
     || (frequencies.minImaginary !== null && (!Number.isFinite(frequencies.minImaginary) || frequencies.minImaginary >= 0))
     || !isOptionalLine(frequencies.line) || !isOptionalEvidence(frequencies.evidence)) return false;
+  if (section.thermochemistry !== null && section.thermochemistry !== undefined
+    && !validateThermochemistryBlock(section.thermochemistry)) return false;
   if (!Array.isArray(section.diagnostics) || section.diagnostics.length > 30
     || section.diagnostics.some(item => !isRecord(item) || !['warning', 'error'].includes(item.kind)
       || !Number.isInteger(item.line) || item.line < 1 || !isOptionalEvidence(item.text))) return false;
@@ -416,6 +425,30 @@ function isOptionalLine(value) {
 
 function isOptionalEvidence(value) {
   return value === null || (typeof value === 'string' && value.length <= 300 && !/[\0]/.test(value));
+}
+
+function isOptionalFinite(value) {
+  return value === null || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function validateThermochemistryBlock(block) {
+  if (!isRecord(block) || !isOptionalFinite(block.zeroPointHartree)) return false;
+  const thermal = block.thermalCorrectionHartree;
+  if (!isRecord(thermal)
+    || !isOptionalFinite(thermal.energy)
+    || !isOptionalFinite(thermal.enthalpy)
+    || !isOptionalFinite(thermal.gibbs)) return false;
+  const totals = block.totalsHartree;
+  if (!isRecord(totals)
+    || !isOptionalFinite(totals.zpe)
+    || !isOptionalFinite(totals.energy)
+    || !isOptionalFinite(totals.enthalpy)
+    || !isOptionalFinite(totals.gibbs)) return false;
+  if (!isOptionalFinite(block.temperatureK) || !isOptionalFinite(block.pressureAtm)
+    || !isOptionalLine(block.line) || !isOptionalEvidence(block.evidence)) return false;
+  return block.failure === null || block.failure === undefined
+    || (isRecord(block.failure) && Number.isInteger(block.failure.line) && block.failure.line >= 1
+      && isOptionalEvidence(block.failure.evidence));
 }
 
 function revalidateProjectAttempts(project) {
@@ -465,6 +498,7 @@ function sanitizeWorkflowProject(project) {
         requireScfRecord: task.gates.requireScfRecord,
         requireOptimizationComplete: task.gates.requireOptimizationComplete,
         requireFrequencyRecord: task.gates.requireFrequencyRecord,
+        requireThermochemistry: task.gates.requireThermochemistry ?? routeHasKeyword(task.config, 'Freq'),
         expectedImaginaryModes: task.gates.expectedImaginaryModes,
       },
       activeAttemptId: task.activeAttemptId || null,
@@ -514,6 +548,30 @@ function sanitizeParsedSection(section) {
       minImaginary: section.frequencies.minImaginary ?? null,
       line: section.frequencies.line ?? null,
       evidence: section.frequencies.evidence ?? null,
+    },
+    thermochemistry: {
+      zeroPointHartree: section.thermochemistry?.zeroPointHartree ?? null,
+      thermalCorrectionHartree: {
+        energy: section.thermochemistry?.thermalCorrectionHartree?.energy ?? null,
+        enthalpy: section.thermochemistry?.thermalCorrectionHartree?.enthalpy ?? null,
+        gibbs: section.thermochemistry?.thermalCorrectionHartree?.gibbs ?? null,
+      },
+      totalsHartree: {
+        zpe: section.thermochemistry?.totalsHartree?.zpe ?? null,
+        energy: section.thermochemistry?.totalsHartree?.energy ?? null,
+        enthalpy: section.thermochemistry?.totalsHartree?.enthalpy ?? null,
+        gibbs: section.thermochemistry?.totalsHartree?.gibbs ?? null,
+      },
+      temperatureK: section.thermochemistry?.temperatureK ?? null,
+      pressureAtm: section.thermochemistry?.pressureAtm ?? null,
+      line: section.thermochemistry?.line ?? null,
+      evidence: section.thermochemistry?.evidence ?? null,
+      failure: section.thermochemistry?.failure
+        ? {
+          line: section.thermochemistry.failure.line,
+          evidence: section.thermochemistry.failure.evidence ?? null,
+        }
+        : null,
     },
     diagnostics: section.diagnostics.map(item => ({ kind: item.kind, line: item.line, text: item.text })),
     omittedDiagnostics: section.omittedDiagnostics,
