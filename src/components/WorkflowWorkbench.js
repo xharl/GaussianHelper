@@ -1,6 +1,7 @@
-import { generateGJF } from '../generators/gjfGenerator.js';
 import { parseGaussianLogStream, parseGaussianLogText } from '../parsers/gaussianLogParser.js';
 import { evaluateWorkflowOutput } from '../utils/workflowGates.js';
+import { buildWorkflowBundle } from '../utils/bundleExport.js';
+import { buildTaskInputText } from '../utils/workflowInput.js';
 import { escapeHtml } from './GaussianOutputInspector.js';
 import {
   createWorkflowProject,
@@ -54,6 +55,9 @@ export class WorkflowWorkbench {
               <input id="workflow-project-name" class="form-input workflow-project-name" maxlength="200" value="${escapeHtml(this.project.name)}" />
             </div>
             <div class="workflow-actions">
+              <button type="button" id="workflow-export-bundle" class="btn btn-secondary btn-sm"
+                title="Download every task input, manifest.json, and scheduler templates as a .zip"
+                ${this.project.tasks.length ? '' : 'disabled'}>Export bundle (.zip)</button>
               <button type="button" id="workflow-save-project" class="btn btn-secondary btn-sm">Save project</button>
               <label class="btn btn-secondary btn-sm workflow-load-label">Open project
                 <input id="workflow-project-input" type="file" accept=".ghproject.json,application/json" hidden />
@@ -63,6 +67,7 @@ export class WorkflowWorkbench {
           </div>
           <div class="card-body">
             <div class="workflow-status" role="status" aria-live="polite">${escapeHtml(this.statusMessage)}</div>
+            ${this.project.tasks.length ? `<p class="workflow-bundle-note">Bundle export includes the input for every task, not only ready steps. The exported scheduler scripts do not validate results; import each Gaussian log here to evaluate the gates.</p>` : ''}
             <label class="file-drop-zone workflow-output-dropzone">
               <span class="file-drop-zone-text">Import Gaussian output logs to validate steps</span>
               <span class="file-drop-zone-hint">Select .log / .out files; parsing stays in this browser</span>
@@ -120,6 +125,7 @@ export class WorkflowWorkbench {
       void this.importOutputFiles(files);
     });
     this.container.querySelector('#workflow-save-project')?.addEventListener('click', () => this.downloadProject());
+    this.container.querySelector('#workflow-export-bundle')?.addEventListener('click', () => this.downloadBundle());
     this.container.querySelector('#workflow-project-input')?.addEventListener('change', event => {
       const file = event.target.files?.[0];
       event.target.value = '';
@@ -517,17 +523,7 @@ export class WorkflowWorkbench {
   }
 
   buildTaskInput(taskId) {
-    const states = deriveTaskStates(this.project);
-    if (!this.project.tasks.some(task => task.id === taskId)) throw new Error(`Unknown task "${taskId}".`);
-    if (states[taskId] !== 'ready') throw new Error(`Task is not ready to export (current state: ${STATUS_LABELS[states[taskId]]}).`);
-    const task = this.project.tasks.find(item => item.id === taskId);
-    const config = cloneJson(task.config);
-    config.link0 ||= {};
-    if (task.checkpointFromTaskId) {
-      const source = this.project.tasks.find(item => item.id === task.checkpointFromTaskId);
-      config.link0.oldCheckpoint = source.config.link0.checkpoint;
-    }
-    return generateGJF(config);
+    return buildTaskInputText(this.project, taskId, { requireReady: true });
   }
 
   downloadTask(taskId) {
@@ -542,6 +538,26 @@ export class WorkflowWorkbench {
     const task = this.project.tasks.find(item => item.id === taskId);
     downloadTextFile(gjf, task.inputName, 'text/plain;charset=utf-8');
     return this.markTaskAwaitingOutput(taskId);
+  }
+
+  downloadBundle() {
+    if (this.project.tasks.length === 0) {
+      this.statusMessage = 'Add at least one calculation task before exporting a bundle.';
+      this.render();
+      return false;
+    }
+    let bundle;
+    try {
+      bundle = buildWorkflowBundle(this.project);
+    } catch (error) {
+      this.statusMessage = error instanceof Error ? error.message : String(error);
+      this.render();
+      return false;
+    }
+    downloadBinaryFile(bundle.bytes, bundle.filename, 'application/zip');
+    this.statusMessage = `Exported ${bundle.entryNames.length} files in ${bundle.filename}: inputs for all ${this.project.tasks.length} task(s), manifest.json, and scheduler templates. The scripts do not validate results; import each log here to evaluate the gates.`;
+    this.render();
+    return true;
   }
 
   markTaskAwaitingOutput(taskId) {
@@ -737,7 +753,14 @@ function cloneJson(value) {
 }
 
 function downloadTextFile(text, filename, type) {
-  const blob = new Blob([text], { type });
+  downloadBlob(new Blob([text], { type }), filename);
+}
+
+function downloadBinaryFile(bytes, filename, type) {
+  downloadBlob(new Blob([bytes], { type }), filename);
+}
+
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

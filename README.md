@@ -21,7 +21,7 @@ It runs entirely client-side, providing a fast, graphical tool for setting up in
   - **Windows Batch Control Files** (`.bcf`) for Gaussian's native queuing.
   - **Linux Shell Scripts** (`.sh`) for sequential terminal executions (includes start/end timestamp echoes and completion checks).
 - **Gaussian Output Inspector**: Inspect multiple `.log` / `.out` files locally. Summarize termination, SCF energy/convergence, optimization markers, frequencies, thermochemistry (ZPE and H/G totals with temperature/pressure), warnings, and errors with source line evidence; export a batch CSV report.
-- **Workflow Workbench**: Organize calculation snapshots as a dependency graph, link checkpoint files with `%OldChk`, export only ready steps, import their logs for explicit validation gates, and save/load a portable local project file.
+- **Workflow Workbench**: Organize calculation snapshots as a dependency graph, link checkpoint files with `%OldChk`, export only ready steps, export the whole workflow as a `.zip` bundle with a DAG manifest and scheduler templates, import logs for explicit validation gates, and save/load a portable local project file.
 - **CORS-Bypassing Portable Launchers**:
   - `run.bat` for Windows (uses native PowerShell and .NET listener).
   - `run.sh` for Linux (uses system-native Python 3/2 HTTP server).
@@ -91,6 +91,15 @@ Open **Workflow Workbench** to snapshot the current Gaussian job as a task. Add 
 For each ready task, download its `.gjf`, run it outside GaussianHelper, then import the resulting `.log` / `.out`. A unique filename match is assigned automatically only when that task is awaiting output; unmatched files and multi-section logs require an explicit task/section choice. The Workbench checks normal termination, route-required optimization/frequency/thermochemistry evidence (ZPE, H, and G totals), optional SCF evidence, and optional expected imaginary-mode count. Unknown required evidence does not pass and does not unlock dependent work. Failed steps can be retried; changing inputs/dependencies/gates invalidates affected downstream results.
 
 The browser does **not** run Gaussian or stop an external batch job. It exports one ready task at a time so the user can validate each result before requesting its dependent input. **Save project** / **Open project** use a versioned `.ghproject.json` file that stores task configurations and bounded parsed evidence, not raw log contents; nothing is uploaded or autosaved.
+
+**Export bundle** downloads one `<project>.workflow.zip` containing the inputs for **every** task, including blocked or already-exported tasks. This intentionally differs from the single-task download, which offers only a `ready` step so validation stays sequential; exporting a bundle does not mark any task as awaiting output. The archive contains:
+
+- every task's `.gjf`, named per its `inputName`;
+- `manifest.json` — data only: schema version, generation timestamp, project name, task ids/titles/dependencies, input/output/checkpoint filenames, checkpoint sources, configured gates, and the DAG edges. No gate logic is embedded;
+- `submit-slurm.sh` plus one `task-<id>.slurm` per task, and `submit-pbs.sh` plus one `task-<id>.pbs` per task. Both submit scripts capture each job id and chain dependents with `afterok`, so a diamond `A → B, A → C, B + C → D` is submitted as B and C after A, then D after both;
+- `run-all.sh`, a fully commented plain-bash sequence for running the inputs in topological order.
+
+The exported scripts are inert templates: they run Gaussian but **do not validate results** and make no gate claims. After the jobs finish, import the `.log` / `.out` files into the Workflow Workbench; the browser applies the same gates as for a single task.
 
 ## 🤖 AI Disclaimer
 * **Note**: This project has been developed with the assistance of agentic artificial intelligence (AI) models. While the application, files parsers, and input generators have been tested, users are advised to verify their generated Gaussian Job Files (`.gjf`) and execution scripts before running calculations on production clusters.
