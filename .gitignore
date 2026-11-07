@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Build archives — published as GitHub Release assets, never committed
+dist.zip
+dist.tar.gz
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
