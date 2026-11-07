@@ -32,7 +32,7 @@
 
 - Support an explicit `checkpointFromTaskId` binding to one direct dependency that produces a checkpoint.
 - Emit `%OldChk=<upstream checkpoint>` followed by the current task’s `%Chk=<new checkpoint>`; do not rewrite route or geometry text with brittle regexes.
-- When the route uses `Geom=AllCheck` or `Guess=Read`, require a valid checkpoint binding and a dependency edge to its source. Validate checkpoint names and prevent collisions.
+- When the route uses `Geom=AllCheck`, `Geom=Checkpoint`, or `Guess=Read`, require a valid checkpoint binding and a dependency edge to its source. `Geom=AllCheck` omits the title and molecule specification; `Geom=Checkpoint` retains only the title and charge/multiplicity. Validate checkpoint names and prevent collisions.
 - Keep existing output unchanged for configurations that do not request an old checkpoint.
 
 ### Output matching and gates
@@ -113,10 +113,10 @@ Implement pure helpers for project creation/schema validation, cycle detection, 
 
 ### Task 2: Checkpoint-aware GJF generation
 
-**Modify:** `src/generators/gjfGenerator.js`, `src/utils/validation.js`.
+**Modify:** `src/generators/gjfGenerator.js`, `src/utils/workflowModel.js`.
 **Test:** existing `test/app.test.js` plus new cases in `test/workflowModel.test.js` or `test/workflowGates.test.js`.
 
-Add optional `link0.oldCheckpoint`; emit `%OldChk` in the correct Link 0 position without changing output when absent. Validate checkpoint dependencies, filename safety, and `Geom=AllCheck` / `Guess=Read` requirements. Test exact generated GJF text and invalid/missing bindings.
+Add optional `link0.oldCheckpoint`; emit `%OldChk` in the correct Link 0 position without changing output when absent. Validate checkpoint dependencies, filename safety, and `Geom=AllCheck` / `Geom=Checkpoint` / `Guess=Read` requirements. Ensure `Geom=AllCheck` omits title/charge/geometry and `Geom=Checkpoint` emits only title plus charge/multiplicity. Test exact generated GJF text and invalid/missing bindings.
 
 ### Task 3: Output-gate evaluation
 

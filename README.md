@@ -82,7 +82,7 @@ Statuses are text-derived findings, not proof of scientific correctness. Missing
 
 ## 🧭 Workflow Workbench
 
-Open **Workflow Workbench** to snapshot the current Gaussian job as a task. Add prerequisites to form a directed acyclic workflow; the list is topologically ordered and rejects cycles. A downstream task stays blocked until every prerequisite output passes. Tasks using `Geom=AllCheck` or `Guess=Read` must explicitly depend on a task with a checkpoint, and generated inputs include `%OldChk` plus a distinct `%Chk`.
+Open **Workflow Workbench** to snapshot the current Gaussian job as a task. Add prerequisites to form a directed acyclic workflow; the list is topologically ordered and rejects cycles. A downstream task stays blocked until every prerequisite output passes. Tasks using `Geom=AllCheck`, `Geom=Checkpoint`, or `Guess=Read` must explicitly depend on a task with a checkpoint; `Geom=AllCheck` inputs omit title/charge/geometry, while `Geom=Checkpoint` inputs retain charge/multiplicity but omit atom coordinates. Generated inputs include `%OldChk` plus a distinct `%Chk`.
 
 For each ready task, download its `.gjf`, run it outside GaussianHelper, then import the resulting `.log` / `.out`. A unique filename match is assigned automatically only when that task is awaiting output; unmatched files and multi-section logs require an explicit task/section choice. The Workbench checks normal termination, route-required optimization/frequency evidence, optional SCF evidence, and optional expected imaginary-mode count. Unknown required evidence does not pass and does not unlock dependent work. Failed steps can be retried; changing inputs/dependencies/gates invalidates affected downstream results.
 
