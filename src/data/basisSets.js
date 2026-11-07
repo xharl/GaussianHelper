@@ -209,8 +209,12 @@ export const basisSets = [
   },
 
   // ─── Karlsruhe Basis Sets ───────────────────────────────────────────
+  // Gaussian's keywords for this family are unhyphenated (Def2SVP, Def2TZVP,
+  // Def2TZVPP, Def2QZVP, Def2QZVPP) — the hyphen is only part of the published
+  // basis-set names. `keyword` is what reaches the route section, so it must
+  // stay route-safe; `name` keeps the familiar hyphenated spelling for display.
   {
-    keyword: 'def2-SVP',
+    keyword: 'def2SVP',
     name: 'def2-SVP',
     description: 'Karlsruhe split-valence polarized — efficient double-zeta',
     category: 'Karlsruhe',
@@ -219,7 +223,7 @@ export const basisSets = [
     popular: false,
   },
   {
-    keyword: 'def2-TZVP',
+    keyword: 'def2TZVP',
     name: 'def2-TZVP',
     description: 'Karlsruhe triple-zeta valence polarized — excellent cost/accuracy ratio',
     category: 'Karlsruhe',
@@ -228,7 +232,7 @@ export const basisSets = [
     popular: true,
   },
   {
-    keyword: 'def2-TZVPP',
+    keyword: 'def2TZVPP',
     name: 'def2-TZVPP',
     description: 'Karlsruhe triple-zeta with extra polarization functions',
     category: 'Karlsruhe',
@@ -237,7 +241,7 @@ export const basisSets = [
     popular: false,
   },
   {
-    keyword: 'def2-QZVP',
+    keyword: 'def2QZVP',
     name: 'def2-QZVP',
     description: 'Karlsruhe quadruple-zeta valence polarized',
     category: 'Karlsruhe',
@@ -246,7 +250,7 @@ export const basisSets = [
     popular: false,
   },
   {
-    keyword: 'def2-QZVPP',
+    keyword: 'def2QZVPP',
     name: 'def2-QZVPP',
     description: 'Karlsruhe quadruple-zeta with extra polarization — near CBS limit',
     category: 'Karlsruhe',
