@@ -13,6 +13,7 @@ import { GJFPreview } from './components/GJFPreview.js';
 import { Viewer3D } from './components/Viewer3D.js';
 import { Header } from './components/Header.js';
 import { BatchGenerator } from './components/BatchGenerator.js';
+import { GaussianOutputInspector } from './components/GaussianOutputInspector.js';
 import { getHillFormula } from './utils/elements.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -31,42 +32,45 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="tab-bar" id="output-tabs" style="margin-bottom: var(--space-4);">
       <button type="button" class="tab active" data-output-tab="calc">Current Job</button>
       <button type="button" class="tab" data-output-tab="batch">Batch Queue</button>
+      <button type="button" class="tab" data-output-tab="inspector">Output Inspector</button>
     </div>
     <div id="calc-tab-content" class="tab-panel-content animate-in">
       <div id="viewer-container-target" class="animate-in"></div>
       <div id="preview-container-target" class="animate-in" style="animation-delay: 0.05s; margin-top: var(--space-4);"></div>
     </div>
     <div id="batch-tab-content" class="tab-panel-content hidden animate-in"></div>
+    <div id="inspector-tab-content" class="tab-panel-content hidden animate-in"><div id="inspector-container-target"></div></div>
   `;
 
   const viewerContainer = document.getElementById('viewer-container-target');
   const previewContainer = document.getElementById('preview-container-target');
   const batchTabContent = document.getElementById('batch-tab-content');
+  const inspectorContainer = document.getElementById('inspector-container-target');
 
   // Initialize components
   const viewer3d = new Viewer3D(viewerContainer);
 
   // Wire up tab switching (after viewer3d init so the reference is valid)
   const tabButtons = outputPanel.querySelectorAll('#output-tabs .tab');
-  tabButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      tabButtons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+  const calcTabContent = document.getElementById('calc-tab-content');
+  const batchTabContentElement = document.getElementById('batch-tab-content');
+  const inspectorTabContent = document.getElementById('inspector-tab-content');
 
-      const target = btn.dataset.outputTab;
-      if (target === 'calc') {
-        document.getElementById('calc-tab-content').classList.remove('hidden');
-        document.getElementById('batch-tab-content').classList.add('hidden');
-        // Redraw 3D viewer if needed because its container size changed
-        if (viewer3d && viewer3d.viewer) {
-          viewer3d.viewer.zoomTo();
-          viewer3d.viewer.render();
-        }
-      } else {
-        document.getElementById('calc-tab-content').classList.add('hidden');
-        document.getElementById('batch-tab-content').classList.remove('hidden');
-      }
-    });
+  function showOutputTab(target) {
+    tabButtons.forEach(button => button.classList.toggle('active', button.dataset.outputTab === target));
+    calcTabContent.classList.toggle('hidden', target !== 'calc');
+    batchTabContentElement.classList.toggle('hidden', target !== 'batch');
+    inspectorTabContent.classList.toggle('hidden', target !== 'inspector');
+
+    if (target === 'calc' && viewer3d?.viewer) {
+      viewer3d.viewer.zoomTo();
+      viewer3d.viewer.render();
+    }
+  }
+
+  const showBatchTab = () => showOutputTab('batch');
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => showOutputTab(button.dataset.outputTab));
   });
   
   let batchGenerator;
@@ -115,6 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
       outputName: `${baseName}.log`
     };
   });
+  new GaussianOutputInspector(inspectorContainer);
 
   // Pre-load default simple molecule (Water) on startup
   const smilesInput = document.getElementById('smiles-input');

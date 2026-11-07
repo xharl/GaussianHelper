@@ -20,6 +20,7 @@ It runs entirely client-side, providing a fast, graphical tool for setting up in
 - **Batch Generator & Queue**: Compile multiple calculation configs in a sequence queue, customize inputs/outputs inline, and export them as:
   - **Windows Batch Control Files** (`.bcf`) for Gaussian's native queuing.
   - **Linux Shell Scripts** (`.sh`) for sequential terminal executions (includes start/end timestamp echoes and completion checks).
+- **Gaussian Output Inspector**: Inspect multiple `.log` / `.out` files locally. Summarize termination, SCF energy/convergence, optimization markers, frequencies, warnings, and errors with source line evidence; export a batch CSV report.
 - **CORS-Bypassing Portable Launchers**:
   - `run.bat` for Windows (uses native PowerShell and .NET listener).
   - `run.sh` for Linux (uses system-native Python 3/2 HTTP server).
@@ -42,7 +43,7 @@ npm run dev
 ```
 
 ### 3. Run Unit Test Suite
-Runs the Vitest suite headlessly to verify elements, validation rules, GJF generation, and coordinate parser logic:
+Runs Vitest headlessly to verify element/formula utilities, validation, GJF generation, coordinate parsers, and the Gaussian output inspector:
 ```bash
 npm test
 ```
@@ -71,6 +72,12 @@ No software installation is required.
    ./run.sh
    ```
 3. This spins up Python's built-in server and opens the browser. Hit `Ctrl+C` to terminate the server.
+
+## 🔬 Gaussian Output Inspector
+
+Open the **Output Inspector** tab and drop or select multiple Gaussian `.log` / `.out` files. Files are read locally in the browser; the app does not upload or persist them. The inspector reports termination markers, SCF energies and explicit convergence text, optimization markers, frequencies (including negative-mode values), and matching warnings/errors with line references. Export the section-level comparison as CSV.
+
+Statuses describe text found in the output, not whether a calculation is scientifically correct. Missing or unrecognized markers remain **unknown** or **incomplete**; absence of a warning is not proof of a successful or valid calculation.
 
 ## 🤖 AI Disclaimer
 * **Note**: This project has been developed with the assistance of agentic artificial intelligence (AI) models. While the application, files parsers, and input generators have been tested, users are advised to verify their generated Gaussian Job Files (`.gjf`) and execution scripts before running calculations on production clusters.
