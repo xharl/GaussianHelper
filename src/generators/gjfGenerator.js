@@ -8,6 +8,7 @@
 import { methodIncludesDispersion } from '../data/methods.js';
 import { basisSets } from '../data/basisSets.js';
 import { getBasisEntry } from '../utils/basisCoverage.js';
+import { validateFragmentSpec } from '../utils/validation.js';
 
 /**
  * Semi-empirical methods that do not take an external basis set.
@@ -364,6 +365,100 @@ export function buildRouteSection(route) {
 }
 
 /**
+ * @typedef {Object} FragmentSpec
+ * @property {number} charge - Fragment charge (integer).
+ * @property {number} multiplicity - Fragment spin multiplicity (integer ≥ 1).
+ * @property {[number, number]} atomRange - Inclusive, 0-based
+ *   `[startIndex, endIndex]` into `config.atoms`.
+ */
+
+/**
+ * Resolve and validate `config.fragments`.
+ *
+ * Returns `null` when no explicit fragment specification is supplied. That is
+ * the default path: the molecule is written as a single `charge multiplicity`
+ * line plus one untagged atom block, byte-identical to the output before
+ * fragment support existed.
+ *
+ * Malformed specifications are rejected rather than repaired, because a
+ * silently "fixed" fragment assignment changes the chemistry of the job.
+ *
+ * @param {Object} config - The GJF configuration.
+ * @param {Array<{symbol: string, x: number, y: number, z: number}>} atoms
+ * @returns {FragmentSpec[]|null}
+ * @throws {Error} If the fragment specification is invalid or cannot be applied.
+ */
+function resolveFragmentSpec(config, atoms) {
+  const fragments = config.fragments;
+  if (fragments === undefined || fragments === null) return null;
+
+  if (!Array.isArray(fragments) || fragments.length === 0) {
+    throw new Error(
+      'config.fragments must be a non-empty array of { charge, multiplicity, atomRange }.'
+    );
+  }
+  if (atoms.length === 0) {
+    throw new Error(
+      'config.fragments requires an explicit atom list; fragment atom ranges cannot be resolved ' +
+      'from a checkpoint geometry.'
+    );
+  }
+  if (!Number.isInteger(config.charge)) {
+    throw new Error(
+      'config.charge must be an integer total molecular charge when fragments are specified.'
+    );
+  }
+
+  const { valid, errors } = validateFragmentSpec(fragments, atoms, config.charge);
+  if (!valid) {
+    throw new Error(`Invalid fragment specification: ${errors.join(' ')}`);
+  }
+  return fragments;
+}
+
+/**
+ * Build the charge and spin line for a multi-fragment molecule specification.
+ *
+ * Gaussian 16 documents the layout as the total pair followed by one pair per
+ * fragment, comma-separated within a pair and space-separated between pairs:
+ *
+ * ```
+ * total_charge,total_spin frag1_charge,frag1_spin frag2_charge,frag2_spin
+ * ```
+ *
+ * https://gaussian.com/molspec/ — see the "Fragments" section and the
+ * biphenyl / counterpoise examples. Fragment numbers are 1-based and must run
+ * consecutively for Guess=Fragment and Counterpoise, which the atom ranges
+ * already guarantee (fragment `i` is written with `Fragment=i+1`).
+ *
+ * @param {FragmentSpec[]} fragments
+ * @param {number} charge - Total molecular charge.
+ * @param {number} multiplicity - Total spin multiplicity.
+ * @returns {string}
+ */
+export function buildFragmentChargeLine(fragments, charge, multiplicity) {
+  const pairs = fragments.map((fragment) => `${fragment.charge},${fragment.multiplicity}`);
+  return [`${charge},${multiplicity}`, ...pairs].join(' ');
+}
+
+/**
+ * Map each atom index to its 1-based Gaussian fragment number.
+ *
+ * @param {FragmentSpec[]} fragments - Validated, gap-free, ordered fragments.
+ * @param {number} atomCount
+ * @returns {number[]}
+ */
+export function buildFragmentAssignment(fragments, atomCount) {
+  const assignment = new Array(atomCount).fill(0);
+  fragments.forEach((fragment, index) => {
+    for (let atom = fragment.atomRange[0]; atom <= fragment.atomRange[1]; atom += 1) {
+      assignment[atom] = index + 1;
+    }
+  });
+  return assignment;
+}
+
+/**
  * @typedef {Object} GjfConfig
  * @property {Object} link0 - Link 0 commands.
  * @property {string} [link0.memory] - Memory allocation (e.g. '8GB').
@@ -377,6 +472,12 @@ export function buildRouteSection(route) {
  * @property {number} multiplicity - Spin multiplicity.
  * @property {Array<{symbol: string, x: number, y: number, z: number}>} atoms
  *   Atom coordinates.
+ * @property {FragmentSpec[]} [fragments] - Optional explicit fragment
+ *   specification. When two or more fragments are given, the molecule
+ *   specification is written in Gaussian's fragment-separated form: one
+ *   `total_charge,total_spin frag1_charge,frag1_spin …` line and
+ *   `Symbol(Fragment=N)` atom labels (https://gaussian.com/molspec/). Omitted
+ *   or a single fragment keeps the plain `charge multiplicity` layout.
  */
 
 function routeHasGeometrySource(route, option) {
@@ -452,6 +553,10 @@ export function generateGJF(config) {
   const genecp = isGenECPMode(config.route);
   const genecpBlocks = genecp ? buildGenECPBlocks(config.route) : null;
 
+  // Fragment-separated molecule specification. Resolved here so that an
+  // invalid fragment assignment fails before any partial output.
+  const hasFragmentSpec = config.fragments !== undefined && config.fragments !== null;
+
   // Geom=AllCheck reuses the title, charge, multiplicity, and geometry from the checkpoint.
   sections.push('');
   if (routeHasGeometrySource(config.route, 'AllCheck')) {
@@ -460,8 +565,25 @@ export function generateGJF(config) {
         'GenECP cannot be combined with Geom=AllCheck: the basis and ECP sections must follow an explicit geometry.'
       );
     }
+    if (hasFragmentSpec) {
+      throw new Error(
+        'Fragment specifications cannot be combined with Geom=AllCheck: the molecule specification ' +
+        'is read from the checkpoint, so the fragment charge/spin pairs would be ignored.'
+      );
+    }
     sections.push('');
     return sections.join('\n');
+  }
+
+  const fragments = resolveFragmentSpec(config, atoms);
+  const multiFragment = Array.isArray(fragments) && fragments.length > 1;
+
+  // Geom=Checkpoint omits the atom lines, which are what carry (Fragment=N).
+  if (multiFragment && routeHasGeometrySource(config.route, 'Checkpoint')) {
+    throw new Error(
+      'Fragment specifications cannot be combined with Geom=Checkpoint: the atom lines that ' +
+      'carry (Fragment=N) are not written.'
+    );
   }
 
   // ── Title ──
@@ -476,17 +598,42 @@ export function generateGJF(config) {
   const multiplicity = Number.isInteger(config.multiplicity) && config.multiplicity >= 1
     ? config.multiplicity
     : 1;
-  sections.push(`${charge} ${multiplicity}`);
+  // No explicit fragments (or a single one): the historic `charge mult` line,
+  // byte-identical to the output before fragment support existed.
+  // Multi-fragment: Gaussian's documented
+  // `total_charge,total_spin frag1_charge,frag1_spin …` line, because a bare
+  // list of numbers cannot be delimited unambiguously.
+  sections.push(
+    multiFragment
+      ? buildFragmentChargeLine(fragments, charge, multiplicity)
+      : `${charge} ${multiplicity}`
+  );
 
   // Geom=Checkpoint retrieves atomic positions but still requires charge/multiplicity.
   if (!routeHasGeometrySource(config.route, 'Checkpoint')) {
     if (atoms.length > 0) {
-      for (const atom of atoms) {
-        const sym = (atom.symbol || 'X').padEnd(2, ' ');
-        const x = formatCoordinate(atom.x);
-        const y = formatCoordinate(atom.y);
-        const z = formatCoordinate(atom.z);
-        sections.push(` ${sym}  ${x}${y}${z}`);
+      if (multiFragment) {
+        // Atoms carry their fragment number in a parenthesized parameter, the
+        // documented way to assign fragments (https://gaussian.com/molspec/).
+        const fragmentOfAtom = buildFragmentAssignment(fragments, atoms.length);
+        const labels = atoms.map(
+          (atom, index) => `${atom.symbol || 'X'}(Fragment=${fragmentOfAtom[index]})`
+        );
+        const width = Math.max(...labels.map((label) => label.length));
+        for (let index = 0; index < atoms.length; index += 1) {
+          const x = formatCoordinate(atoms[index].x);
+          const y = formatCoordinate(atoms[index].y);
+          const z = formatCoordinate(atoms[index].z);
+          sections.push(` ${labels[index].padEnd(width)}  ${x}${y}${z}`);
+        }
+      } else {
+        for (const atom of atoms) {
+          const sym = (atom.symbol || 'X').padEnd(2, ' ');
+          const x = formatCoordinate(atom.x);
+          const y = formatCoordinate(atom.y);
+          const z = formatCoordinate(atom.z);
+          sections.push(` ${sym}  ${x}${y}${z}`);
+        }
       }
     } else {
       sections.push(' ! [Draw or import a structure to add coordinates here]');
