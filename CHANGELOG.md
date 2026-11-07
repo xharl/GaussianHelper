@@ -6,7 +6,7 @@ All notable changes to GaussianHelper. The project uses pre-release versions whi
 
 ### Workflow view
 
-- **Node view** — a graph canvas over the existing DAG: topological auto-layout with per-task saved positions, drag-to-connect dependencies (self-links, duplicates, and cycles rejected), edge/task inspection, block-library presets that snapshot the active job, zoom, and an Expand mode that widens the canvas. Gate evaluation, checkpoint semantics, exports, and project persistence are unchanged. Conditional TRUE/FALSE branches remain unmodelled; readiness is still decided by gates.
+- **Node view** — a graph canvas over the existing DAG: topological auto-layout with per-task saved positions and collision-free auto-placement, drag-to-connect dependencies (self-links, duplicates, and cycles rejected, with drop-target feedback), edge/task inspection, quick edits (title, imaginary-mode gates), checkpoint hand-offs created or cleared from an edge, block-library presets that snapshot the active job, zoom/fit, and an expanded-by-default canvas. Gate evaluation, exports, and project persistence are unchanged. Conditional TRUE/FALSE branches remain unmodelled; readiness is still decided by gates.
 - Fixed the header version label to `v0.3-alpha`.
 
 ## v0.3-alpha — 2026-11-07

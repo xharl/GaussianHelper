@@ -5,7 +5,7 @@ import { buildWorkflowBundle } from '../utils/bundleExport.js';
 import { buildTaskInputText, buildTaskProvenanceRecord } from '../utils/workflowInput.js';
 import { PROVENANCE_SUFFIX, createCompactProvenance, stringifyProvenanceRecord } from '../utils/provenance.js';
 import { STATUS_LABELS } from '../utils/workflowLabels.js';
-import { clampGraphPosition, connectionIssue, resolveGraphPositions, GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH } from '../utils/workflowGraph.js';
+import { clampGraphPosition, connectionIssue, resolveGraphPositions, findFreeGraphPosition, graphBounds, GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH } from '../utils/workflowGraph.js';
 import { GRAPH_BLOCKS, renderGraphView, updateEdgeGeometry } from './WorkflowGraph.js';
 import { escapeHtml } from './GaussianOutputInspector.js';
 import {
@@ -40,6 +40,7 @@ export class WorkflowWorkbench {
     this.view = 'list';
     this.graphZoom = 1;
     this.graphFocus = false;
+    this._graphFocusChosen = false;
     this.selectedTaskId = null;
     this.selectedEdge = null;
     this.render();
@@ -150,6 +151,7 @@ export class WorkflowWorkbench {
       selectedTaskId: this.selectedTaskId,
       selectedEdge: this.selectedEdge,
       focus: this.graphFocus,
+      statusMessage: this.statusMessage,
     });
   }
 
@@ -264,6 +266,22 @@ export class WorkflowWorkbench {
     });
     this.container.querySelectorAll('[data-graph-zoom]').forEach(button => {
       button.addEventListener('click', () => this.zoomGraph(button.dataset.graphZoom));
+    });
+    this.container.querySelectorAll('[data-graph-title]').forEach(input => {
+      input.addEventListener('change', () => this.renameTask(input.dataset.graphTitle, input.value));
+    });
+    this.container.querySelectorAll('[data-graph-gate]').forEach(input => {
+      input.addEventListener('change', () => this.updateGate(input.dataset.taskId, input.dataset.graphGate, input.checked));
+    });
+    this.container.querySelectorAll('[data-graph-imaginary]').forEach(input => {
+      input.addEventListener('change', () => {
+        this.updateGate(input.dataset.taskId, 'expectedImaginaryModes', input.value === '' ? null : Number(input.value));
+      });
+    });
+    this.container.querySelectorAll('[data-graph-magnitude]').forEach(input => {
+      input.addEventListener('change', () => {
+        this.updateGate(input.dataset.taskId, 'minImaginaryMagnitude', input.value === '' ? null : Number(input.value));
+      });
     });
     const viewport = this.container.querySelector('[data-graph-viewport]');
     viewport?.addEventListener('pointerdown', event => this.beginCanvasPan(event, viewport));
@@ -509,6 +527,7 @@ export class WorkflowWorkbench {
       this.project.updatedAt = new Date().toISOString();
       this.statusMessage = `Added ${task.title}. Export a ready step, run it in Gaussian, then import its output to unlock dependents.`;
       this.render();
+      if (this.view === 'graph') this.scrollTaskIntoView(task.id);
       return task;
     } catch (error) {
       this.statusMessage = error instanceof Error ? error.message : String(error);
@@ -617,6 +636,9 @@ export class WorkflowWorkbench {
   setView(view) {
     if (view !== 'list' && view !== 'graph') return false;
     this.view = view;
+    // The Workbench lives in the third app column; give the canvas the width it
+    // needs on first entry, but respect a user who explicitly collapsed it.
+    if (view === 'graph' && !this._graphFocusChosen) this.graphFocus = true;
     this.statusMessage = view === 'graph'
       ? 'Graph view: drag headers to arrange, drag a right-hand port onto another task to add a dependency, click a line to inspect it.'
       : 'List view: every field and gate remains editable per task.';
@@ -654,11 +676,37 @@ export class WorkflowWorkbench {
     }
   }
 
+  scrollTaskIntoView(taskId) {
+    setTimeout(() => {
+      const node = this.container.querySelector?.(`[data-graph-task="${cssEscape(taskId)}"]`);
+      const viewport = this.container.querySelector?.('[data-graph-viewport]');
+      if (!node || !viewport) return;
+      const nodeRect = node.getBoundingClientRect();
+      const viewRect = viewport.getBoundingClientRect();
+      if (nodeRect.right > viewRect.right) viewport.scrollLeft += nodeRect.right - viewRect.right + 32;
+      if (nodeRect.bottom > viewRect.bottom) viewport.scrollTop += nodeRect.bottom - viewRect.bottom + 32;
+      if (nodeRect.left < viewRect.left) viewport.scrollLeft -= viewRect.left - nodeRect.left + 32;
+      if (nodeRect.top < viewRect.top) viewport.scrollTop -= viewRect.top - nodeRect.top + 32;
+    }, 0);
+  }
+
   zoomGraph(direction) {
+    if (direction === 'fit') return this.fitGraph();
     const next = direction === 'reset'
       ? 1
       : this.graphZoom + (direction === 'in' ? 0.1 : -0.1);
     this.graphZoom = Math.min(1.5, Math.max(0.5, Math.round(next * 10) / 10));
+    this.render();
+    return this.graphZoom;
+  }
+
+  fitGraph() {
+    const viewport = this.container.querySelector?.('[data-graph-viewport]');
+    const bounds = graphBounds(resolveGraphPositions(this.project.tasks));
+    const width = viewport?.clientWidth || bounds.width;
+    const height = viewport?.clientHeight || bounds.height;
+    const zoom = Math.min(1, (width - 32) / bounds.width, (height - 32) / bounds.height);
+    this.graphZoom = Math.max(0.5, Math.min(1, Math.round(zoom * 100) / 100));
     this.render();
     return this.graphZoom;
   }
@@ -689,7 +737,10 @@ export class WorkflowWorkbench {
         const positions = resolveGraphPositions(this.project.tasks);
         const position = positions[selected.id];
         if (position) {
-          task.graph = clampGraphPosition({ x: position.x + GRAPH_NODE_WIDTH + 104, y: position.y + 40 });
+          task.graph = findFreeGraphPosition(positions, {
+            x: position.x + GRAPH_NODE_WIDTH + 104,
+            y: position.y + 40,
+          });
         }
       }
       const candidate = { ...this.project, tasks: [...this.project.tasks, task] };
@@ -703,6 +754,7 @@ export class WorkflowWorkbench {
         ? `Added ${task.title}; it depends on ${selected.title}. Import its output to unlock dependents.`
         : `Added ${task.title}. Connect it or edit it in the list view.`;
       this.render();
+      this.scrollTaskIntoView(task.id);
       return task;
     } catch (error) {
       this.statusMessage = error instanceof Error ? error.message : String(error);
@@ -752,7 +804,40 @@ export class WorkflowWorkbench {
   clearCheckpointHandoff(fromId, toId) {
     const target = this.project.tasks.find(task => task.id === toId);
     if (!target || target.checkpointFromTaskId !== fromId) return false;
-    return this.setTaskDependencies(toId, target.dependencies, null);
+    // Clearing the binding must also remove Geom=/Guess= tokens. Leaving them
+    // would produce an input that reads a checkpoint the task no longer has.
+    const config = stripContinuationIntent(cloneJson(target.config));
+    return this.updateTask(toId, { config, checkpointFromTaskId: null }, true);
+  }
+
+  /**
+   * Bind a downstream task to an upstream checkpoint and rewrite its route for
+   * that continuation mode. The dependency edge must already exist, so this can
+   * never bind a checkpoint across unrelated branches.
+   *
+   * @param {string} fromId
+   * @param {string} toId
+   * @param {'checkpoint'|'allcheck'} mode
+   * @returns {boolean}
+   */
+  setCheckpointHandoff(fromId, toId, mode) {
+    if (mode !== 'checkpoint' && mode !== 'allcheck') return false;
+    const upstream = this.project.tasks.find(task => task.id === fromId);
+    const target = this.project.tasks.find(task => task.id === toId);
+    if (!upstream?.config.link0?.checkpoint) {
+      this.statusMessage = 'The upstream task has no checkpoint file to hand off.';
+      this.render();
+      return false;
+    }
+    if (!target || !target.dependencies.includes(fromId)) {
+      this.statusMessage = 'A checkpoint hand-off requires a direct dependency on the upstream task.';
+      this.render();
+      return false;
+    }
+    const config = applyContinuationIntent(cloneJson(target.config), mode);
+    config.link0 ||= {};
+    delete config.link0.oldCheckpoint;
+    return this.updateTask(toId, { config, checkpointFromTaskId: fromId }, true);
   }
 
   validateGraph() {
@@ -770,6 +855,7 @@ export class WorkflowWorkbench {
     if (action === 'validate') return this.validateGraph();
     if (action === 'toggle-focus') {
       this.graphFocus = !this.graphFocus;
+      this._graphFocusChosen = true;
       this.render();
       return this.graphFocus;
     }
@@ -795,6 +881,9 @@ export class WorkflowWorkbench {
     if (action === 'delete') return this.removeTask(button.dataset.taskId);
     if (action === 'remove-edge') return this.disconnectGraphEdge(button.dataset.edgeFrom, button.dataset.edgeTo);
     if (action === 'clear-checkpoint') return this.clearCheckpointHandoff(button.dataset.edgeFrom, button.dataset.edgeTo);
+    if (action === 'handoff-checkpoint') {
+      return this.setCheckpointHandoff(button.dataset.edgeFrom, button.dataset.edgeTo, button.dataset.mode);
+    }
     return false;
   }
 
@@ -868,11 +957,26 @@ export class WorkflowWorkbench {
     };
     draw(event);
 
-    const onMove = moveEvent => draw(moveEvent);
+    const clearTargets = () => this.container.querySelectorAll?.('.wf-node.is-drop-target, .wf-node.is-drop-invalid')
+      .forEach(node => node.classList.remove('is-drop-target', 'is-drop-invalid'));
+    const highlightTarget = moveEvent => {
+      clearTargets();
+      const candidate = document.elementFromPoint?.(moveEvent.clientX, moveEvent.clientY)?.closest?.('[data-graph-task]');
+      if (!candidate) return;
+      const issue = candidate.dataset.graphTask === fromId
+        ? 'self'
+        : connectionIssue(this.project.tasks, fromId, candidate.dataset.graphTask);
+      candidate.classList.add(issue ? 'is-drop-invalid' : 'is-drop-target');
+    };
+    const onMove = moveEvent => {
+      draw(moveEvent);
+      highlightTarget(moveEvent);
+    };
     const finish = upEvent => {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', finish);
       document.removeEventListener('pointercancel', finish);
+      clearTargets();
       preview.remove();
       const target = document.elementFromPoint?.(upEvent.clientX, upEvent.clientY)?.closest?.('[data-graph-task]');
       if (!target) {
@@ -1348,16 +1452,35 @@ function applyContinuationIntent(config, intent) {
   if (!tokens) throw new Error(`Unknown task intent "${intent}".`);
 
   const route = { ...config.route };
-  const geomPattern = /\bGeom\s*=\s*(?:\([^)]*\)|\S+)/gi;
-  const guessPattern = /\bGuess\s*=\s*(?:\([^)]*\)|\S+)/gi;
+  const withoutGeom = stripRouteToken(route, 'Geom');
+  const cleaned = intent === 'checkpoint' ? stripRouteToken(withoutGeom, 'Guess') : withoutGeom;
+  cleaned.custom = [cleaned.custom, tokens].filter(Boolean).join(' ').trim();
+  return { ...config, route: cleaned };
+}
+
+/**
+ * Remove `Geom=`/`Guess=` tokens from a route. Used when a checkpoint binding
+ * is cleared: the tokens are only meaningful with that binding.
+ *
+ * @param {Object} config
+ * @returns {Object} A new config (the input is not mutated).
+ */
+function stripContinuationIntent(config) {
+  const route = { ...config.route };
+  const withoutGeom = stripRouteToken(route, 'Geom');
+  const cleaned = stripRouteToken(withoutGeom, 'Guess');
+  return { ...config, route: cleaned };
+}
+
+/** @param {Object} route @param {'Geom'|'Guess'} keyword */
+function stripRouteToken(route, keyword) {
+  const pattern = new RegExp(`\\b${keyword}\\s*=\\s*(?:\\([^)]*\\)|\\S+)`, 'gi');
+  const next = { ...route };
   for (const field of ['jobType', 'custom']) {
-    if (typeof route[field] !== 'string') continue;
-    let value = route[field].replace(geomPattern, ' ');
-    if (intent === 'checkpoint') value = value.replace(guessPattern, ' ');
-    route[field] = value.replace(/\s+/g, ' ').trim();
+    if (typeof next[field] !== 'string') continue;
+    next[field] = next[field].replace(pattern, ' ').replace(/\s+/g, ' ').trim();
   }
-  route.custom = [route.custom, tokens].filter(Boolean).join(' ').trim();
-  return { ...config, route };
+  return next;
 }
 
 function safeBaseName(value) {

@@ -125,7 +125,8 @@ export function computeGraphLayout(tasks) {
 /**
  * Merge stored positions with the automatic layout. A stored position wins;
  * tasks without one fall back to their grid slot. This lets a user drag two
- * nodes and leave the rest tidy.
+ * nodes and leave the rest tidy. Auto-placed nodes are pushed to the next free
+ * slot so they cannot land on top of a saved position.
  *
  * @param {Array<{id: string, graph?: GraphPosition, dependencies?: string[]}>} tasks
  * @returns {Object<string, GraphPosition>}
@@ -133,12 +134,59 @@ export function computeGraphLayout(tasks) {
 export function resolveGraphPositions(tasks) {
   const layout = computeGraphLayout(tasks);
   const positions = {};
+  const autoPlaced = [];
   for (const task of tasks) {
-    positions[task.id] = isGraphPosition(task.graph)
-      ? clampGraphPosition(task.graph)
-      : layout[task.id] || { x: GRAPH_PADDING, y: GRAPH_PADDING };
+    if (isGraphPosition(task.graph)) {
+      positions[task.id] = clampGraphPosition(task.graph);
+    } else {
+      autoPlaced.push(task);
+    }
+  }
+  for (const task of autoPlaced) {
+    positions[task.id] = findFreeGraphPosition(positions, layout[task.id] || { x: GRAPH_PADDING, y: GRAPH_PADDING });
   }
   return positions;
+}
+
+/**
+ * Whether two node rectangles overlap, including a breathing gap.
+ *
+ * @param {GraphPosition} a
+ * @param {GraphPosition} b
+ * @param {number} [gap=24]
+ * @returns {boolean}
+ */
+export function graphNodesOverlap(a, b, gap = 24) {
+  return a.x < b.x + GRAPH_NODE_WIDTH + gap
+    && a.x + GRAPH_NODE_WIDTH + gap > b.x
+    && a.y < b.y + GRAPH_NODE_HEIGHT + gap
+    && a.y + GRAPH_NODE_HEIGHT + gap > b.y;
+}
+
+/**
+ * First free slot near `preferred`: scan downward in the preferred column, then
+ * move one column right and repeat. Bounded so a malformed or extremely dense
+ * project still returns a finite position.
+ *
+ * @param {Object<string, GraphPosition>} occupied
+ * @param {GraphPosition} preferred
+ * @returns {GraphPosition}
+ */
+export function findFreeGraphPosition(occupied, preferred) {
+  const nodes = Object.values(occupied || {});
+  const start = clampGraphPosition(preferred);
+  const columnStep = GRAPH_NODE_WIDTH + GRAPH_COLUMN_GAP;
+  const rowStep = GRAPH_NODE_HEIGHT + GRAPH_ROW_GAP;
+  for (let column = 0; column < 12; column += 1) {
+    for (let row = 0; row < 24; row += 1) {
+      const candidate = {
+        x: start.x + column * columnStep,
+        y: start.y + row * rowStep,
+      };
+      if (!nodes.some(node => graphNodesOverlap(candidate, node))) return candidate;
+    }
+  }
+  return { x: start.x, y: start.y + 24 * rowStep };
 }
 
 /**
@@ -234,9 +282,11 @@ export function gateSummary(task) {
   if (gates.requireFinalEnergy) parts.push('final E');
   if (Number.isInteger(gates.expectedImaginaryModes)) {
     parts.push(`${gates.expectedImaginaryModes} imag`);
-  }
-  if (Number.isFinite(gates.minImaginaryMagnitude)) {
-    parts.push(`≥${gates.minImaginaryMagnitude} cm⁻¹`);
+    // The magnitude floor only matters when at least one imaginary mode is
+    // expected; showing it for a minimum (0) is noise.
+    if (gates.expectedImaginaryModes > 0 && Number.isFinite(gates.minImaginaryMagnitude)) {
+      parts.push(`≥${gates.minImaginaryMagnitude} cm⁻¹`);
+    }
   }
   return parts.join(' · ');
 }

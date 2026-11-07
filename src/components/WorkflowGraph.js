@@ -67,8 +67,9 @@ export function routeSummary(task) {
   const method = String(route.method || '').trim();
   const basis = route.basisMode === 'GenECP' ? 'GenECP' : String(route.basisSet || '').trim();
   const jobType = String(route.jobType || '').trim();
+  const custom = String(route.custom || '').trim();
   const head = method ? `${method}${basis ? `/${basis}` : ''}` : '';
-  return [head, jobType].filter(Boolean).join(' ') || 'No route yet';
+  return [head, jobType, custom].filter(Boolean).join(' ') || 'No route yet';
 }
 
 /** @param {Object} task @returns {string} */
@@ -77,7 +78,8 @@ function nodeKind(task) {
   if (jobType.startsWith('IRC')) return 'IRC';
   if (jobType.startsWith('FREQ')) return 'FREQ';
   if (jobType.startsWith('OPT')) return 'OPT';
-  if (jobType.startsWith('SP')) return jobType.includes('POP') ? 'POP' : 'SP';
+  if (task?.config?.route?.pop) return 'POP';
+  if (jobType.startsWith('SP')) return 'SP';
   return 'CALC';
 }
 
@@ -86,7 +88,7 @@ function renderNode(task, states, position, selected) {
   const state = states[task.id] || 'blocked';
   const summary = gateSummary(task);
   return `
-    <article class="wf-node${selected ? ' is-selected' : ''}" data-graph-task="${escapeHtml(task.id)}"
+    <article class="wf-node state-${escapeHtml(state)}${selected ? ' is-selected' : ''}" data-graph-task="${escapeHtml(task.id)}"
       title="${escapeHtml(task.inputName || '')}" tabindex="0"
       style="left:${position.x}px;top:${position.y}px;width:${GRAPH_NODE_WIDTH}px;height:${GRAPH_NODE_HEIGHT}px">
       <header class="wf-node-header" data-graph-drag="${escapeHtml(task.id)}" title="Drag to move · click to inspect">
@@ -94,7 +96,7 @@ function renderNode(task, states, position, selected) {
         <strong class="wf-node-title" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</strong>
         <span class="workflow-status-badge status-${escapeHtml(state)}">${escapeHtml(STATUS_LABELS[state] || state)}</span>
       </header>
-      <code class="wf-node-route">${escapeHtml(routeSummary(task))}</code>
+      <code class="wf-node-route" title="${escapeHtml(routeSummary(task))}">${escapeHtml(routeSummary(task))}</code>
       <div class="wf-node-meta">
         <span class="wf-node-gates">${escapeHtml(summary || task.inputName || '')}</span>
       </div>
@@ -139,9 +141,16 @@ function gateList(task) {
 /** @param {Object} task @param {Object} states @param {Object} project */
 function renderTaskInspector(task, states, project) {
   const state = states[task.id] || 'blocked';
+  const checkpointSource = task.checkpointFromTaskId
+    ? project.tasks.find(candidate => candidate.id === task.checkpointFromTaskId)
+    : null;
   const checkpoint = task.checkpointFromTaskId
-    ? `<span>Checkpoint from</span><code>${escapeHtml(task.checkpointFromTaskId)}</code>`
+    ? `<div><dt>Checkpoint</dt><dd><code>${escapeHtml(task.config.link0?.checkpoint || '—')}</code> · from <span title="${escapeHtml(task.checkpointFromTaskId)}">${escapeHtml(checkpointSource?.title || task.checkpointFromTaskId)}</span></dd></div>`
     : '';
+  const imaginaryValue = Number.isInteger(task.gates.expectedImaginaryModes) ? String(task.gates.expectedImaginaryModes) : '';
+  const magnitudeValue = Number.isFinite(task.gates.minImaginaryMagnitude) ? String(task.gates.minImaginaryMagnitude) : '';
+  const isFrequency = /\bFreq\b/i.test(`${task.config.route.jobType || ''} ${task.config.route.custom || ''}`);
+  const showThermochemistry = isFrequency || task.gates.requireThermochemistry;
   return `
     <div class="wf-inspector-head">
       <div>
@@ -158,8 +167,35 @@ function renderTaskInspector(task, states, project) {
     <dl class="wf-inspector-meta">
       <div><dt>Input</dt><dd><code>${escapeHtml(task.inputName)}</code></dd></div>
       <div><dt>Output</dt><dd><code>${escapeHtml(task.outputName)}</code></dd></div>
-      ${checkpoint ? `<div><dt>Checkpoint</dt><dd><code>${escapeHtml(task.config.link0?.checkpoint || '—')}</code> · source <code>${escapeHtml(task.checkpointFromTaskId)}</code></dd></div>` : ''}
+      ${checkpoint}
     </dl>
+    <section class="wf-inspector-section wf-quick-edit">
+      <h4>Quick edit</h4>
+      <label class="wf-inspector-field"><span>Title</span>
+        <input class="form-input" maxlength="200" data-graph-title="${escapeHtml(task.id)}" value="${escapeHtml(task.title)}" />
+      </label>
+      <div class="wf-inspector-grid">
+        <label class="wf-inspector-field"><span>Imag. modes</span>
+          <input class="form-input" type="number" min="0" step="1" placeholder="none"
+            data-graph-imaginary="${escapeHtml(task.id)}" value="${escapeHtml(imaginaryValue)}" />
+        </label>
+        <label class="wf-inspector-field"><span>Min |imag| cm⁻¹</span>
+          <input class="form-input" type="number" min="0" max="10000" step="1" placeholder="off"
+            data-graph-magnitude="${escapeHtml(task.id)}" value="${escapeHtml(magnitudeValue)}" />
+        </label>
+      </div>
+      ${showThermochemistry ? `<label class="wf-check">
+        <input type="checkbox" data-task-id="${escapeHtml(task.id)}" data-graph-gate="requireThermochemistry"
+          ${task.gates.requireThermochemistry ? 'checked' : ''} />
+        Thermochemistry required
+      </label>` : '<p class="wf-inspector-note">Thermochemistry gate applies to Freq tasks.</p>'}
+      <label class="wf-check">
+        <input type="checkbox" data-task-id="${escapeHtml(task.id)}" data-graph-gate="requireFinalEnergy"
+          ${task.gates.requireFinalEnergy ? 'checked' : ''} />
+        Method final energy required
+      </label>
+      <p class="wf-inspector-note">Edits invalidate this task and its descendants, exactly like the list editor.</p>
+    </section>
     <section class="wf-inspector-section">
       <h4>Prerequisites</h4>
       ${taskDependencyList(task, states, project)}
@@ -169,7 +205,7 @@ function renderTaskInspector(task, states, project) {
       ${gateList(task)}
     </section>
     <div class="wf-inspector-actions">
-      <button type="button" class="btn btn-secondary btn-sm" data-graph-action="edit-list" data-task-id="${escapeHtml(task.id)}">Edit in list view</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-graph-action="edit-list" data-task-id="${escapeHtml(task.id)}">Open full editor</button>
       <button type="button" class="btn btn-primary btn-sm" data-graph-action="export" data-task-id="${escapeHtml(task.id)}"
         ${state === 'ready' ? '' : 'disabled'} title="${state === 'ready' ? 'Download this ready input' : 'Only a ready task can be exported'}">Download ready input</button>
       <button type="button" class="btn btn-ghost btn-sm wf-danger" data-graph-action="delete" data-task-id="${escapeHtml(task.id)}">Delete task</button>
@@ -198,6 +234,19 @@ function renderEdgeInspector(project, states, edge) {
     </div>
     <p class="wf-inspector-copy">${escapeHtml(to.title)} stays blocked until <strong>${escapeHtml(from.title)}</strong> passes its gates.
       ${checkpoint ? `Its input reads <code>%OldChk=${escapeHtml(from.config.link0?.checkpoint || '')}</code> from the upstream task.` : 'No checkpoint is handed over; the dependency only orders validation.'}</p>
+    ${!checkpoint && from.config.link0?.checkpoint ? `
+      <section class="wf-inspector-section">
+        <h4>Checkpoint hand-off</h4>
+        <p class="wf-inspector-copy">The upstream task writes <code>${escapeHtml(from.config.link0.checkpoint)}</code>. Rewrite the downstream route to read it:</p>
+        <div class="wf-inspector-actions">
+          <button type="button" class="btn btn-secondary btn-sm" data-graph-action="handoff-checkpoint" data-mode="checkpoint"
+            data-edge-from="${escapeHtml(from.id)}" data-edge-to="${escapeHtml(to.id)}">Geom=Checkpoint</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-graph-action="handoff-checkpoint" data-mode="allcheck"
+            data-edge-from="${escapeHtml(from.id)}" data-edge-to="${escapeHtml(to.id)}">Geom=AllCheck</button>
+        </div>
+        <p class="wf-inspector-note">Replaces any existing <code>Geom=</code>/<code>Guess=</code> tokens and invalidates this task's imported results.</p>
+      </section>
+    ` : ''}
     <div class="wf-inspector-actions">
       ${checkpoint ? `<button type="button" class="btn btn-secondary btn-sm" data-graph-action="clear-checkpoint" data-edge-from="${escapeHtml(from.id)}" data-edge-to="${escapeHtml(to.id)}">Clear checkpoint hand-off</button>` : ''}
       <button type="button" class="btn btn-ghost btn-sm wf-danger" data-graph-action="remove-edge" data-edge-from="${escapeHtml(from.id)}" data-edge-to="${escapeHtml(to.id)}">Remove dependency</button>
@@ -239,7 +288,7 @@ function renderInspector(project, states, options) {
  * @param {{from: string, to: string}|null} options.selectedEdge
  * @returns {string}
  */
-export function renderGraphView({ project, states, zoom, selectedTaskId, selectedEdge, focus = false }) {
+export function renderGraphView({ project, states, zoom, selectedTaskId, selectedEdge, focus = false, statusMessage = '' }) {
   const tasks = project.tasks;
   const positions = resolveGraphPositions(tasks);
   const bounds = graphBounds(positions);
@@ -294,9 +343,11 @@ export function renderGraphView({ project, states, zoom, selectedTaskId, selecte
               <span class="wf-zoom-value">${Math.round(zoom * 100)}%</span>
               <button type="button" class="btn btn-ghost btn-sm" data-graph-zoom="in" title="Zoom in">+</button>
               <button type="button" class="btn btn-ghost btn-sm" data-graph-zoom="reset" title="Reset zoom">Reset</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-graph-zoom="fit" title="Fit the graph in the viewport">Fit</button>
             </span>
           </div>
         </div>
+        <div class="wf-graph-status" role="status" aria-live="polite">${escapeHtml(statusMessage)}</div>
         <div class="wf-graph-viewport" data-graph-viewport>
           <div class="wf-graph-spacer" style="width:${Math.round(bounds.width * zoom)}px;height:${Math.round(bounds.height * zoom)}px">
             <div class="wf-graph-stage" data-graph-stage
@@ -317,7 +368,7 @@ export function renderGraphView({ project, states, zoom, selectedTaskId, selecte
             </div>
           </div>
         </div>
-        <div class="wf-graph-hint">Drag a header to move · drag the right port to connect · click a line to inspect · scroll to pan</div>
+        <div class="wf-graph-hint">Drag a header to move · drag the right port to connect · click a line to inspect · drag the background or scroll to pan</div>
       </section>
 
       <aside class="wf-graph-inspector" aria-label="Inspector">

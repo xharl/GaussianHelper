@@ -131,6 +131,17 @@
   background-size: 24px 24px;
 }
 
+.wf-graph-status {
+  min-height: 16px;
+  padding: 6px var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(99, 102, 241, 0.05);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .wf-graph-viewport:active {
   cursor: grabbing;
 }
@@ -201,6 +212,54 @@
   border-radius: var(--radius-md);
   background: linear-gradient(180deg, rgba(24, 29, 46, 0.97), rgba(13, 16, 26, 0.98));
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.wf-node::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--border-primary);
+}
+
+.wf-node.state-ready::before {
+  background: #60a5fa;
+}
+
+.wf-node.state-passed::before {
+  background: #34d399;
+}
+
+.wf-node.state-blocked::before,
+.wf-node.state-awaiting-output::before {
+  background: #f59e0b;
+}
+
+.wf-node.state-failed::before,
+.wf-node.state-needs-review::before {
+  background: #ef4444;
+}
+
+.wf-node.state-incomplete::before {
+  background: #6b7280;
+}
+
+.wf-node:hover {
+  border-color: var(--border-hover);
+}
+
+.wf-node.is-drop-target {
+  border-color: var(--success);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35), 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+
+.wf-node.is-drop-invalid {
+  border-color: var(--error);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3), 0 14px 30px rgba(0, 0, 0, 0.45);
 }
 
 .wf-node.is-selected {
@@ -290,6 +349,13 @@
   border: 2px solid var(--accent-primary);
   border-radius: 50%;
   background: var(--bg-secondary);
+}
+
+.wf-port::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
 }
 
 .wf-port-in {
@@ -493,6 +559,50 @@
   color: var(--text-accent);
   font-family: var(--font-mono);
   font-size: 10px;
+}
+
+.workflow-status-badge.status-ready {
+  color: #93c5fd;
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.wf-inspector-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: var(--space-2);
+}
+
+.wf-inspector-field > span {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.wf-inspector-field .form-input {
+  padding: 6px 8px;
+  font-size: var(--text-xs);
+}
+
+.wf-inspector-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.wf-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.wf-quick-edit {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .wf-inspector-section {

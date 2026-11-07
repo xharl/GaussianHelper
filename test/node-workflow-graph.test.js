@@ -4,7 +4,9 @@ import {
   GRAPH_NODE_WIDTH,
   computeGraphLayout,
   connectionIssue,
+  gateSummary,
   graphEdgePath,
+  graphNodesOverlap,
   isGraphPosition,
   resolveGraphPositions,
 } from '../src/utils/workflowGraph.js';
@@ -96,6 +98,21 @@ describe('workflow graph geometry', () => {
     expect(isGraphPosition({ x: Infinity, y: 2 })).toBe(false);
     expect(isGraphPosition({ x: 1e9, y: 2 })).toBe(false);
     expect(isGraphPosition(null)).toBe(false);
+  });
+
+  it('shows the magnitude floor only when a saddle mode is expected', () => {
+    const minimum = gateSummary({
+      route: { jobType: 'Freq' },
+      gates: { expectedImaginaryModes: 0, minImaginaryMagnitude: 50 },
+    });
+    const saddle = gateSummary({
+      route: { jobType: 'Freq' },
+      gates: { expectedImaginaryModes: 1, minImaginaryMagnitude: 50 },
+    });
+    expect(minimum).toContain('0 imag');
+    expect(minimum).not.toContain('≥50');
+    expect(saddle).toContain('1 imag');
+    expect(saddle).toContain('≥50 cm⁻¹');
   });
 });
 
@@ -194,17 +211,16 @@ describe('Workbench node view', () => {
     expect(workbench.project.tasks.find(task => task.id === first.id).dependencies).toEqual([]);
   });
 
-  it('clears a checkpoint hand-off while keeping the dependency', () => {
+  it('clears a checkpoint hand-off and removes the continuation tokens', () => {
     const workbench = new WorkflowWorkbench(makeContainer(), () => config());
     const source = workbench.addCurrentTask();
-    const downstream = workbench.addCurrentTask({
-      dependencies: [source.id],
-      checkpointFromTaskId: source.id,
-    });
+    const downstream = workbench.addCurrentTask({ dependencies: [source.id] });
+    expect(workbench.setCheckpointHandoff(source.id, downstream.id, 'checkpoint')).toBe(true);
     expect(workbench.clearCheckpointHandoff(source.id, downstream.id)).toBe(true);
     const updated = workbench.project.tasks.find(task => task.id === downstream.id);
     expect(updated.dependencies).toEqual([source.id]);
     expect(updated.checkpointFromTaskId).toBeNull();
+    expect(updated.config.route.custom || '').not.toMatch(/Geom=|Guess=/);
   });
 
   it('validates structure without claiming run gates passed', () => {
@@ -215,14 +231,66 @@ describe('Workbench node view', () => {
     expect(workbench.statusMessage).toMatch(/gates need imported Gaussian output/i);
   });
 
-  it('toggles the expand state without changing the project', () => {
+  it('auto-expands on first graph entry and respects an explicit collapse', () => {
     const workbench = new WorkflowWorkbench(makeContainer(), () => config());
     workbench.addCurrentTask();
     workbench.setView('graph');
-    expect(workbench.handleGraphAction({ dataset: { graphAction: 'toggle-focus' } })).toBe(true);
     expect(workbench.graphFocus).toBe(true);
     expect(workbench.handleGraphAction({ dataset: { graphAction: 'toggle-focus' } })).toBe(false);
+    expect(workbench.graphFocus).toBe(false);
+    expect(workbench.handleGraphAction({ dataset: { graphAction: 'toggle-focus' } })).toBe(true);
     expect(workbench.project.tasks.length).toBe(1);
+  });
+
+  it('avoids collisions when auto-placing around saved positions', () => {
+    const tasks = [
+      { id: 'a', dependencies: [], graph: { x: 48, y: 48 } },
+      { id: 'b', dependencies: [] },
+    ];
+    const positions = resolveGraphPositions(tasks);
+    expect(positions.a).toEqual({ x: 48, y: 48 });
+    expect(positions.b).not.toEqual(positions.a);
+    expect(positions.b.y).toBeGreaterThan(48);
+  });
+
+  it('binds an upstream checkpoint and rewrites the downstream route', () => {
+    const workbench = new WorkflowWorkbench(makeContainer(), () => config());
+    const source = workbench.addCurrentTask();
+    const downstream = workbench.addCurrentTask({ dependencies: [source.id] });
+    expect(workbench.setCheckpointHandoff(source.id, downstream.id, 'allcheck')).toBe(true);
+    const updated = workbench.project.tasks.find(task => task.id === downstream.id);
+    expect(updated.checkpointFromTaskId).toBe(source.id);
+    expect(updated.config.route.custom).toMatch(/Geom=AllCheck/);
+    expect(workbench.setCheckpointHandoff(source.id, downstream.id, 'checkpoint')).toBe(true);
+    const rebound = workbench.project.tasks.find(task => task.id === downstream.id);
+    expect(rebound.config.route.custom).toMatch(/Geom=Checkpoint/);
+    expect(rebound.config.route.custom).toMatch(/Guess=Read/);
+    expect(rebound.config.route.custom).not.toMatch(/Geom=AllCheck/);
+  });
+
+  it('refuses a checkpoint hand-off without a direct dependency', () => {
+    const workbench = new WorkflowWorkbench(makeContainer(), () => config());
+    const source = workbench.addCurrentTask();
+    const unrelated = workbench.addCurrentTask();
+    expect(workbench.setCheckpointHandoff(source.id, unrelated.id, 'checkpoint')).toBe(false);
+    expect(workbench.statusMessage).toMatch(/direct dependency/i);
+  });
+
+  it('places successive blocks without overlapping', () => {
+    const workbench = new WorkflowWorkbench(makeContainer(), () => config());
+    const first = workbench.addCurrentTask();
+    workbench.selectGraphTask(first.id);
+    const freq = workbench.addBlockTask('freq');
+    workbench.selectGraphTask(freq.id);
+    const sp = workbench.addBlockTask('sp');
+    const positions = resolveGraphPositions(workbench.project.tasks);
+    const entries = Object.entries(positions);
+    for (let i = 0; i < entries.length; i += 1) {
+      for (let j = i + 1; j < entries.length; j += 1) {
+        expect(graphNodesOverlap(entries[i][1], entries[j][1])).toBe(false);
+      }
+    }
+    expect(sp.graph).toBeDefined();
   });
 
   it('zooms within bounds', () => {
