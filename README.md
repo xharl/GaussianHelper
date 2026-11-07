@@ -101,6 +101,24 @@ The browser does **not** run Gaussian or stop an external batch job. It exports 
 
 The exported scripts are inert templates: they run Gaussian but **do not validate results** and make no gate claims. After the jobs finish, import the `.log` / `.out` files into the Workflow Workbench; the browser applies the same gates as for a single task.
 
+## 🧾 Route Keyword Validation
+
+Every method, basis-set, calculation-type and option keyword that GaussianHelper writes into the route section is checked against a machine-readable registry of Gaussian 16 keywords in `src/data/keywordRegistry.js`. The method and basis entries are seeded from `src/data/methods.js` and `src/data/basisSets.js`, so the curated lists and the registry cannot drift apart; a data test fails if a listed keyword is missing from the registry, appears twice, or the two disagree.
+
+`validateRouteTokens()` in `src/utils/validation.js` classifies problems by severity:
+
+- **Unknown keyword → warning.** The message quotes the offending token (for example `"FOO-2X"`), because Gaussian may accept a functional, `IOp`, or keyword newer than this app's list. Warnings appear in the preview's pre-flight lint panel and never block generation.
+- **Route-unsafe characters → error.** Whitespace, `/`, `=`, `#`, `%`, or a control character inside a single token (for example a method field containing `B3LYP/def2`) cannot be emitted safely and is always reported as an error.
+
+The free-text **Extra Keywords** field is pasted verbatim, so it is skipped by default. Two advanced switches sit below the preview header, and the same fields can be set on the route object when configuring a job programmatically:
+
+| Route field | Effect |
+|---|---|
+| `allowUnknownRouteTokens: true` | Suppresses unknown-keyword warnings. It does **not** suppress route-unsafe-character errors. |
+| `strictRouteTokens: true` | Also validates the free-text Extra Keywords field against the registry. |
+
+Only the keyword that owns a parenthesised list is token-checked: `SCF=(Tight,MaxCycle=200)` validates `SCF`. Documented sub-options such as `Tight`, `Solvent=Water`, and `GD3BJ` are recorded in the registry metadata but are not individually rejected, because Gaussian has many legitimate sub-options beyond this app's list.
+
 ## 🤖 AI Disclaimer
 * **Note**: This project has been developed with the assistance of agentic artificial intelligence (AI) models. While the application, files parsers, and input generators have been tested, users are advised to verify their generated Gaussian Job Files (`.gjf`) and execution scripts before running calculations on production clusters.
 
