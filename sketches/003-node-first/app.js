@@ -704,6 +704,7 @@ function renderProjectInspector() {
         <span class="v-icon">✓</span>
         <div><strong>Structure valid</strong>${condCount ? `${condCount} condition · ` : ''}${loopCount} loop. Branches and loops are illustrative; evaluation is not part of this mockup.</div>
       </div>
+      <p class="inspector-note" style="margin-top:8px">Select any block to edit its full Current Job parameter set here; use the expand control for a two-column layout.</p>
     </section>
 
     <div class="inspector-actions-row">
