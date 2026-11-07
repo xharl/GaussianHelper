@@ -1,6 +1,15 @@
 /**
  * Gaussian calculation methods organized by category.
  * Each method: { keyword, name, description, category, subcategory, popular, needsBasis }
+ *
+ * `keyword` is the exact route-section token and must be a standalone Gaussian
+ * method keyword. `name` is display-only and may use literature notation
+ * (e.g. "M06-2X", "ωB97X-D") that is not itself a route token.
+ *
+ * Methods whose `keyword` already implies an empirical dispersion model
+ * (e.g. B2PLYPD3 = B2PLYP + D3(BJ), see https://gaussian.com/dft/) carry
+ * `alreadyIncludesDispersion: true`, so the UI and generator can block a
+ * second, double-counting EmpiricalDispersion request.
  */
 
 export const methods = [
@@ -242,12 +251,13 @@ export const methods = [
   },
   {
     keyword: 'B2PLYPD3',
-    name: 'B2PLYP-D3',
-    description: 'B2PLYP with D3 dispersion correction',
+    name: 'B2PLYPD3 (D3BJ included)',
+    description: 'B2PLYP double hybrid with Grimme D3(BJ) dispersion built into the keyword — do not add EmpiricalDispersion',
     category: 'DFT',
     subcategory: 'Double Hybrid',
     popular: false,
     needsBasis: true,
+    alreadyIncludesDispersion: true,
   },
   {
     keyword: 'mPW2PLYP',
@@ -588,5 +598,29 @@ export const methodCategories = [
   'Semi-Empirical',
   'Molecular Mechanics',
 ];
+
+/**
+ * Look up a method definition by its route keyword (case-insensitive).
+ *
+ * @param {string} keyword - Route keyword, e.g. 'B2PLYPD3'.
+ * @returns {Object|undefined} The matching method definition, if any.
+ */
+export function getMethodByKeyword(keyword) {
+  if (typeof keyword !== 'string' || keyword.trim() === '') return undefined;
+  const needle = keyword.trim().toUpperCase();
+  return methods.find((m) => m.keyword.toUpperCase() === needle);
+}
+
+/**
+ * Whether a method keyword already requests an empirical dispersion model by
+ * default, so that adding `EmpiricalDispersion=...` would double-count it.
+ *
+ * @param {string} keyword - Route keyword, e.g. 'B2PLYPD3'.
+ * @returns {boolean}
+ */
+export function methodIncludesDispersion(keyword) {
+  const method = getMethodByKeyword(keyword);
+  return method?.alreadyIncludesDispersion === true;
+}
 
 export default methods;

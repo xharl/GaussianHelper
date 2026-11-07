@@ -5,6 +5,8 @@
  * @module generators/gjfGenerator
  */
 
+import { methodIncludesDispersion } from '../data/methods.js';
+
 /**
  * Semi-empirical methods that do not take an external basis set.
  * @type {Set<string>}
@@ -74,6 +76,17 @@ export function buildRouteSection(route) {
 
   if (!method) {
     throw new Error('A computational method is required to build the route section.');
+  }
+
+  // Some method keywords already include empirical dispersion (B2PLYPD3 is
+  // B2PLYP + D3(BJ) in Gaussian 16). Adding EmpiricalDispersion on top would
+  // double-count the correction, so refuse to build such a route.
+  const dispersion = (route.dispersion || '').trim();
+  if (dispersion && methodIncludesDispersion(method)) {
+    throw new Error(
+      `Method ${method} already includes an empirical dispersion correction; ` +
+      `remove ${dispersion} to avoid double-counting dispersion.`
+    );
   }
 
   // Method/Basis or just Method
