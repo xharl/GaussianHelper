@@ -50,16 +50,20 @@ npm test
 ```
 
 ### 4. Build and Package Production Assets
-Compiles the client-side code and automatically generates portable distribution archives `dist.zip` and `dist.tar.gz` via our custom postbuild step:
+Compiles the client-side code and generates portable distribution archives (`dist.zip`, `dist.tar.gz`) locally via our custom postbuild step:
 ```bash
 npm run build
 ```
+
+These archives are build outputs and are **not committed** to the repository — `dist/`, `dist.zip` and `dist.tar.gz` are gitignored. Prebuilt bundles are published as GitHub Release assets; see [How to Launch the Portable App](#-how-to-launch-the-portable-app-offline--zero-install).
+
+> **Distribution intent:** `package.json` deliberately keeps `"private": true`. GaussianHelper is a browser application, not an npm library, so an accidental `npm publish` is blocked. Distribution happens through GitHub Releases and source builds.
 
 ---
 
 ## 🚀 How to Launch the Portable App (Offline / Zero-Install)
 
-No software installation is required.
+No software installation is required. Download `dist.zip` (Windows) or `dist.tar.gz` (Linux) from the [latest release](https://github.com/xharl/GaussianHelper/releases/latest). Release assets are named with the commit they were built from (for example `gaussian-helper-bundle-<sha>.zip`), so a bundle can always be traced back to its source. To build the bundle yourself instead, run `npm run build` as described above.
 
 ### 💻 Windows
 1. Extract the `dist.zip` archive.
