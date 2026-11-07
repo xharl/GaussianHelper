@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GaussianHelper — Node-first app shell (concept)</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app" id="app" data-inspector="dock">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6">
+          <circle cx="5.5" cy="12" r="2.1"/><circle cx="18" cy="6" r="2.1"/><circle cx="18" cy="18" r="2.1"/>
+          <path d="M7.4 11.2 15.8 6.8M7.4 12.8l8.4 4.4"/>
+        </svg>
+      </span>
+      <span class="brand-name">Gaussian<span>Helper</span></span>
+      <span class="proto-chip">Design prototype</span>
+    </div>
+
+    <div class="project-block">
+      <span class="eyebrow">Project</span>
+      <button class="project-name" data-action="project-menu" aria-haspopup="true">
+        Diels–Alder TS verification
+        <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <span class="save-pill"><i class="dot"></i> saved locally</span>
+    </div>
+
+    <div class="top-actions">
+      <button class="btn ghost" data-open-modal="molecule">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="m5.8 7.2 4.4-2.4M5.8 8.8l4.4 2.4"/></svg>
+        Molecule
+      </button>
+      <button class="btn ghost" data-action="import-log">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M8 2v7m0 0 2.5-2.5M8 9 5.5 6.5M3 11v2h10v-2"/></svg>
+        Import log
+      </button>
+      <button class="btn" data-action="export">
+        Export
+        <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <button class="icon-btn" data-action="about" title="About this mockup" aria-label="About this mockup">?</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="canvas-area" aria-label="Workflow canvas">
+      <div class="canvas-hud">
+        <div class="hud-group">
+          <button class="btn add-block" data-action="toggle-palette" aria-expanded="false" aria-controls="palette">
+            <span class="plus">+</span> Add block
+          </button>
+          <div class="canvas-context">
+            <span class="eyebrow">Workflow</span>
+            <strong id="canvas-count">7 blocks · 7 connections · 1 loop</strong>
+          </div>
+        </div>
+        <div class="hud-group hud-tools">
+          <button class="tool" data-action="validate" title="Validate workflow structure">Validate</button>
+          <span class="hud-sep" aria-hidden="true"></span>
+          <button class="tool icon" data-action="zoom-out" aria-label="Zoom out">−</button>
+          <span class="zoom-label" id="zoom-label">100%</span>
+          <button class="tool icon" data-action="zoom-in" aria-label="Zoom in">+</button>
+          <button class="tool" data-action="fit">Fit</button>
+        </div>
+      </div>
+
+      <div class="canvas-viewport" id="canvas-viewport">
+        <div class="world" id="world">
+          <svg class="edges" id="edges" width="1080" height="580" viewBox="0 0 1080 580" aria-label="Workflow connections">
+            <defs>
+              <marker id="arrow-default" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+                <path d="M0 0 10 5 0 10z" fill="#465163"/>
+              </marker>
+              <marker id="arrow-passed" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+                <path d="M0 0 10 5 0 10z" fill="#2f9e7f"/>
+              </marker>
+              <marker id="arrow-ready" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+                <path d="M0 0 10 5 0 10z" fill="#6675e8"/>
+              </marker>
+              <marker id="arrow-blocked" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+                <path d="M0 0 10 5 0 10z" fill="#4b5565"/>
+              </marker>
+              <marker id="arrow-checkpoint" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+                <path d="M0 0 10 5 0 10z" fill="#2dd4bf"/>
+              </marker>
+              <marker id="arrow-review" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+                <path d="M0 0 10 5 0 10z" fill="#fb7185"/>
+              </marker>
+              <marker id="arrow-true" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+                <path d="M0 0 10 5 0 10z" fill="#34d399"/>
+              </marker>
+              <marker id="arrow-false" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+                <path d="M0 0 10 5 0 10z" fill="#fbbf24"/>
+              </marker>
+              <marker id="arrow-loop" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+                <path d="M0 0 10 5 0 10z" fill="#a78bfa"/>
+              </marker>
+              <marker id="arrow-selected" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+                <path d="M0 0 10 5 0 10z" fill="#c4b5fd"/>
+              </marker>
+            </defs>
+            <g id="edge-layer"></g>
+          </svg>
+          <div class="nodes" id="nodes"></div>
+        </div>
+      </div>
+
+      <div class="canvas-legend" aria-hidden="true">
+        <span><i class="legend-line"></i> dependency</span>
+        <span><i class="legend-line teal"></i> checkpoint</span>
+        <span><i class="legend-line green"></i> true</span>
+        <span><i class="legend-line amber"></i> false</span>
+        <span><i class="legend-line violet"></i> loop</span>
+      </div>
+
+      <div class="statusbar" role="status" aria-live="polite">
+        <div class="status-left">
+          <span class="status-item"><i class="dot green"></i><strong>3</strong> passed</span>
+          <span class="status-item"><i class="dot blue"></i><strong>1</strong> ready</span>
+          <span class="status-item"><i class="dot red"></i><strong>2</strong> review</span>
+          <span class="status-item"><i class="dot slate"></i><strong>1</strong> blocked</span>
+        </div>
+        <div class="status-message" id="status-message">Structure valid · acyclic · no Gaussian job has been run</div>
+        <div class="status-right">
+          <span class="mock-tag">Mockup only</span>
+          <span class="kbd-hint"><kbd>⌘</kbd><kbd>K</kbd> search blocks</span>
+        </div>
+      </div>
+
+      <div class="palette" id="palette" hidden>
+        <div class="palette-head">
+          <span class="eyebrow">Add a calculation block</span>
+          <span class="palette-note">snapshots the active defaults</span>
+        </div>
+        <div id="palette-list"></div>
+        <div class="palette-foot">Blocks are illustrative; no Gaussian input is generated.</div>
+      </div>
+    </section>
+
+    <aside class="inspector" id="inspector" aria-label="Context inspector"></aside>
+    <button class="inspector-reopen" id="inspector-reopen" data-action="open-inspector" hidden>
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3 3h10v10H3zM10 3v10"/></svg>
+      Inspector
+    </button>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop" hidden>
+  <section class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"></section>
+</div>
+
+<div class="prototype-bar" aria-label="Prototype controls">
+  <span class="proto-label">Prototype</span>
+  <div class="segmented small" role="group" aria-label="Inspector layout">
+    <button data-inspector-mode="dock" class="is-active">Docked</button>
+    <button data-inspector-mode="overlay">Overlay</button>
+  </div>
+  <span class="proto-sep" aria-hidden="true"></span>
+  <button class="proto-btn" data-action="toggle-wide">Wide inspector</button>
+  <button class="proto-btn" data-open-modal="molecule">Molecule drawer</button>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<noscript>This concept mockup needs JavaScript to render the graph and inspector.</noscript>
+<script src="app.js"></script>
+</body>
+</html>
