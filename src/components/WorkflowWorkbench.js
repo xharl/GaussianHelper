@@ -201,6 +201,12 @@ export class WorkflowWorkbench {
         this.updateGate(input.dataset.taskId, 'expectedImaginaryModes', value);
       });
     });
+    this.container.querySelectorAll('[data-workflow-min-imaginary-magnitude]').forEach(input => {
+      input.addEventListener('change', () => {
+        const value = input.value === '' ? null : Number(input.value);
+        this.updateGate(input.dataset.taskId, 'minImaginaryMagnitude', value);
+      });
+    });
     this.container.querySelectorAll('[data-workflow-assign-output]').forEach(button => {
       button.addEventListener('click', () => {
         const id = button.dataset.workflowAssignOutput;
@@ -269,9 +275,15 @@ export class WorkflowWorkbench {
               data-task-id="${escapeHtml(task.id)}" data-workflow-gate="requireFrequencyRecord" /> Require frequency record</label>
             <label><input type="checkbox" ${task.gates.requireThermochemistry ? 'checked' : ''} ${requiresRouteKeyword(task.config, 'Freq') ? 'disabled' : ''}
               data-task-id="${escapeHtml(task.id)}" data-workflow-gate="requireThermochemistry" /> Require thermochemistry (ZPE, H, G)</label>
+            <label><input type="checkbox" ${task.gates.requireFinalEnergy ? 'checked' : ''}
+              data-task-id="${escapeHtml(task.id)}" data-workflow-gate="requireFinalEnergy" /> Require method final energy (post-HF / composite)</label>
             <label class="workflow-field"><span>Expected imaginary modes (optional)</span>
               <input class="form-input" type="number" min="0" step="1" data-task-id="${escapeHtml(task.id)}" data-workflow-imaginary-modes="${escapeHtml(task.id)}"
                 value="${task.gates.expectedImaginaryModes ?? ''}" />
+            </label>
+            <label class="workflow-field"><span>Saddle threshold (cm⁻¹, blank = off)</span>
+              <input class="form-input" type="number" min="0" step="1" data-task-id="${escapeHtml(task.id)}" data-workflow-min-imaginary-magnitude
+                value="${task.gates.minImaginaryMagnitude ?? ''}" />
             </label>
           </fieldset>
           ${latestAttempt ? this.renderAttempt(latestAttempt) : ''}
@@ -555,6 +567,12 @@ export class WorkflowWorkbench {
     if (gateName === 'expectedImaginaryModes' && value !== null
       && (!Number.isInteger(value) || value < 0)) {
       this.statusMessage = 'Expected imaginary-mode count must be a non-negative integer.';
+      this.render();
+      return false;
+    }
+    if (gateName === 'minImaginaryMagnitude' && value !== null
+      && (!Number.isFinite(value) || value < 0 || value > 10000)) {
+      this.statusMessage = 'Saddle threshold must be a number between 0 and 10000 cm-1, or blank to disable.';
       this.render();
       return false;
     }
