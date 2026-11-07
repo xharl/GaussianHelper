@@ -92,7 +92,8 @@ describe('workflow project validation', () => {
       requireFrequencyRecord: true,
       requireThermochemistry: true,
       requireFinalEnergy: false,
-      expectedImaginaryModes: null,
+      expectedImaginaryModes: 0,
+      minImaginaryMagnitude: 50,
     });
     config.route.jobType = 'SP';
     expect(task.config.route.jobType).toBe('Opt Freq');
