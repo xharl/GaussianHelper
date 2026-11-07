@@ -90,6 +90,7 @@ describe('workflow project validation', () => {
       requireScfRecord: false,
       requireOptimizationComplete: true,
       requireFrequencyRecord: true,
+      requireThermochemistry: true,
       expectedImaginaryModes: null,
     });
     config.route.jobType = 'SP';

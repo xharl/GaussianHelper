@@ -222,6 +222,8 @@ export class WorkflowWorkbench {
               data-task-id="${escapeHtml(task.id)}" data-workflow-gate="requireOptimizationComplete" /> Require optimization completion</label>
             <label><input type="checkbox" ${task.gates.requireFrequencyRecord ? 'checked' : ''} ${requiresRouteKeyword(task.config, 'Freq') ? 'disabled' : ''}
               data-task-id="${escapeHtml(task.id)}" data-workflow-gate="requireFrequencyRecord" /> Require frequency record</label>
+            <label><input type="checkbox" ${task.gates.requireThermochemistry ? 'checked' : ''} ${requiresRouteKeyword(task.config, 'Freq') ? 'disabled' : ''}
+              data-task-id="${escapeHtml(task.id)}" data-workflow-gate="requireThermochemistry" /> Require thermochemistry (ZPE, H, G)</label>
             <label class="workflow-field"><span>Expected imaginary modes (optional)</span>
               <input class="form-input" type="number" min="0" step="1" data-task-id="${escapeHtml(task.id)}" data-workflow-imaginary-modes="${escapeHtml(task.id)}"
                 value="${task.gates.expectedImaginaryModes ?? ''}" />
