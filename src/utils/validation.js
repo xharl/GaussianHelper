@@ -134,6 +134,156 @@ export function validateChargeMultiplicity(charge, multiplicity, atomCounts) {
 }
 
 /**
+ * @typedef {Object} FragmentSpec
+ * @property {number} charge - Charge of the fragment (integer).
+ * @property {number} multiplicity - Spin multiplicity of the fragment (integer ≥ 1).
+ * @property {[number, number]} atomRange - Inclusive, 0-based [startIndex, endIndex].
+ */
+
+/**
+ * Validate an explicit fragment specification against the atom list.
+ *
+ * Gaussian 16 defines fragments with a `(Fragment=N)` parameter on the atom
+ * lines and a single charge/spin line that carries the total pair followed by
+ * one pair per fragment — `total_charge,total_spin frag1_charge,frag1_spin …`
+ * (https://gaussian.com/molspec/). This validator enforces what must hold
+ * before such a line is emitted:
+ *
+ *   1. every fragment has an integer charge and a positive integer
+ *      multiplicity;
+ *   2. the atom ranges are inclusive, in bounds, and tile the atom list
+ *      exactly once — no overlaps, no gaps, no unassigned atoms;
+ *   3. the fragment charges sum to the molecular total charge;
+ *   4. each fragment's charge/multiplicity pair is parity-consistent with the
+ *      electrons of its own atoms.
+ *
+ * Malformed input is reported, never repaired.
+ *
+ * @param {FragmentSpec[]} fragments - Ordered fragment specifications
+ *   (fragment 1 first); index + 1 is the Gaussian fragment number.
+ * @param {Array<{symbol: string}>|Array<string>} atoms - The full atom list.
+ * @param {number} totalCharge - The molecular total charge.
+ * @param {Object} [options]
+ * @param {boolean} [options.checkParity=true] - When false, only the structural
+ *   and charge-sum rules run. Used for a single fragment, whose parity is the
+ *   same check as the molecule's total charge/multiplicity.
+ * @returns {{valid: boolean, errors: string[]}}
+ */
+export function validateFragmentSpec(fragments, atoms, totalCharge, { checkParity = true } = {}) {
+  const errors = [];
+
+  if (!Array.isArray(fragments) || fragments.length === 0) {
+    return {
+      valid: false,
+      errors: ['fragments must be a non-empty array of { charge, multiplicity, atomRange }.'],
+    };
+  }
+  if (!Array.isArray(atoms) || atoms.length === 0) {
+    return { valid: false, errors: ['Fragment atom ranges require the atom list to validate against.'] };
+  }
+  if (!Number.isInteger(totalCharge)) {
+    errors.push('The total molecular charge must be an integer when fragments are specified.');
+  }
+
+  const total = atoms.length;
+  let expectedStart = 0;
+  let chargeSum = 0;
+  let rangesWellFormed = true;
+
+  fragments.forEach((fragment, index) => {
+    const label = `Fragment ${index + 1}`;
+
+    if (!fragment || typeof fragment !== 'object') {
+      rangesWellFormed = false;
+      errors.push(`${label}: must be an object { charge, multiplicity, atomRange }.`);
+      return;
+    }
+
+    if (!Number.isInteger(fragment.charge)) {
+      errors.push(`${label}: charge must be an integer.`);
+    } else {
+      chargeSum += fragment.charge;
+    }
+
+    if (!Number.isInteger(fragment.multiplicity) || fragment.multiplicity < 1) {
+      errors.push(
+        `${label}: multiplicity must be a positive integer (≥ 1). ` +
+        'Gaussian\'s negative-multiplicity Guess=Fragment β-spin convention is not supported.'
+      );
+    }
+
+    const range = fragment.atomRange;
+    if (!Array.isArray(range) || range.length !== 2 || !range.every(Number.isInteger)) {
+      rangesWellFormed = false;
+      errors.push(`${label}: atomRange must be [startIndex, endIndex] inclusive 0-based integers.`);
+      return;
+    }
+
+    const [start, end] = range;
+    if (start < 0 || end >= total) {
+      rangesWellFormed = false;
+      errors.push(
+        `${label}: atomRange [${start}, ${end}] is outside the molecule ` +
+        `(${total} atoms; valid indices 0–${total - 1}).`
+      );
+      return;
+    }
+    if (start > end) {
+      rangesWellFormed = false;
+      errors.push(`${label}: atomRange [${start}, ${end}] is empty; start must not exceed end.`);
+      return;
+    }
+
+    if (start < expectedStart) {
+      errors.push(
+        `${label}: atomRange [${start}, ${end}] overlaps an earlier fragment; ` +
+        `the next unassigned atom is ${expectedStart}.`
+      );
+    } else if (start > expectedStart) {
+      const skipped = start - expectedStart === 1
+        ? `atom ${expectedStart}`
+        : `atoms ${expectedStart}–${start - 1}`;
+      errors.push(
+        `${label}: atomRange [${start}, ${end}] skips ${skipped}; ` +
+        'fragment ranges must cover every atom exactly once.'
+      );
+    }
+    expectedStart = end + 1;
+
+    if (
+      checkParity &&
+      Number.isInteger(fragment.charge) &&
+      Number.isInteger(fragment.multiplicity) &&
+      fragment.multiplicity >= 1
+    ) {
+      const result = validateChargeMultiplicity(
+        fragment.charge,
+        fragment.multiplicity,
+        atoms.slice(start, end + 1)
+      );
+      if (!result.valid) {
+        errors.push(`${label}: ${result.message}`);
+      }
+    }
+  });
+
+  if (rangesWellFormed && expectedStart < total) {
+    errors.push(
+      `Fragment ranges cover ${expectedStart} of ${total} atoms; ` +
+      `atoms ${expectedStart}–${total - 1} (0-based) are unassigned.`
+    );
+  }
+
+  if (Number.isInteger(totalCharge) && chargeSum !== totalCharge) {
+    errors.push(
+      `Fragment charges sum to ${chargeSum}, but the total molecular charge is ${totalCharge}.`
+    );
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/**
  * Validate that the chosen method and basis set are compatible.
  *
  * Semi-empirical and molecular mechanics methods do not use a basis set,
@@ -193,6 +343,8 @@ export function validateMethodBasis(method, basisSet) {
  * @param {number} state.charge - Molecular charge.
  * @param {number} state.multiplicity - Spin multiplicity.
  * @param {Array<{symbol: string, x: number, y: number, z: number}>} state.atoms - Atom coordinates.
+ * @param {Array<{charge: number, multiplicity: number, atomRange: [number, number]}>} [state.fragments]
+ *   Optional explicit fragment specification (see {@link validateFragmentSpec}).
  * @returns {{valid: boolean, errors: string[]}}
  */
 export function validateInputCompleteness(state) {
@@ -261,7 +413,12 @@ export function validateInputCompleteness(state) {
         }
       }
 
-      // Cross-validate charge/multiplicity against atoms if we have valid values
+      // Cross-validate charge/multiplicity against atoms if we have valid values.
+      // With fragments this checks the total pair; each fragment's own pair is
+      // checked separately below.
+      const explicitFragments = Array.isArray(state?.fragments) && state.fragments.length > 0;
+      const multiFragment = Array.isArray(state?.fragments) && state.fragments.length > 1;
+
       if (
         errors.length === 0 &&
         Number.isInteger(state.charge) &&
@@ -271,6 +428,16 @@ export function validateInputCompleteness(state) {
         if (!cmResult.valid) {
           errors.push(cmResult.message);
         }
+      }
+
+      if (explicitFragments) {
+        const fragmentResult = validateFragmentSpec(
+          state.fragments,
+          state.atoms,
+          state.charge,
+          { checkParity: multiFragment }
+        );
+        errors.push(...fragmentResult.errors);
       }
     }
 
