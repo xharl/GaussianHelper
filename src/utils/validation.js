@@ -8,6 +8,7 @@
 import { getAtomicNumber } from './elements.js';
 import { getMethodByKeyword, methodIncludesDispersion } from '../data/methods.js';
 import { basisSets } from '../data/basisSets.js';
+import * as basisCoverage from './basisCoverage.js';
 
 /**
  * Semi-empirical methods that do not require a basis set.
@@ -300,18 +301,12 @@ export function validateInputCompleteness(state) {
  */
 
 /**
- * Optional bridge to src/utils/basisCoverage.js, which is added by a parallel
- * change. `import.meta.glob` is resolved by Vite at build time and yields an
- * empty object when the module is absent, so this file keeps working on a
- * branch that does not have it yet. The API is three-valued:
+ * Bridge to src/utils/basisCoverage.js. The API is three-valued:
  * `basisCoversElement(basis, symbol)` returns 'yes' | 'no' | 'unknown', and
  * `basisIncludesEcp(basis)` reports whether the keyword carries an ECP.
  */
-const basisCoverageModule = import.meta.glob('./basisCoverage.js', { eager: true })['./basisCoverage.js'];
 const optionalBasisCoverage =
-  basisCoverageModule && typeof basisCoverageModule.basisCoversElement === 'function'
-    ? basisCoverageModule
-    : null;
+  typeof basisCoverage.basisCoversElement === 'function' ? basisCoverage : null;
 
 /** DFT rungs that carry exact-exchange and therefore need a polarized basis. */
 const HYBRID_RUNGS = new Set(['hybrid', 'meta-hybrid']);
