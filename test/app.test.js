@@ -172,6 +172,36 @@ describe('Gaussian Job File (GJF) Generator', () => {
     expect(gjf).toContain('#N HF/3-21G Freq Geom=AllCheck Guess=Read');
   });
 
+  it('omits title and molecule specification for Geom=AllCheck', () => {
+    const gjf = generateGJF({
+      link0: { oldCheckpoint: 'previous.chk', checkpoint: 'next.chk' },
+      route: { method: 'HF', basisSet: '3-21G', jobType: 'Freq Geom=AllCheck Guess=Read' },
+      title: 'Must not be sent to Gaussian',
+      charge: 0,
+      multiplicity: 1,
+      atoms: [{ symbol: 'O', x: 0, y: 0, z: 0 }],
+    });
+    expect(gjf).toContain('#N HF/3-21G Freq Geom=AllCheck Guess=Read');
+    expect(gjf).not.toContain('Must not be sent to Gaussian');
+    expect(gjf).not.toContain('0 1');
+    expect(gjf).not.toContain(' O       0.000000');
+    expect(gjf.endsWith('\n\n')).toBe(true);
+  });
+
+  it('keeps charge/multiplicity but omits coordinates for Geom=Checkpoint', () => {
+    const gjf = generateGJF({
+      link0: { oldCheckpoint: 'previous.chk', checkpoint: 'next.chk' },
+      route: { method: 'HF', basisSet: '3-21G', jobType: 'Opt Geom=Checkpoint' },
+      title: 'Checkpoint geometry optimization',
+      charge: 0,
+      multiplicity: 2,
+      atoms: [{ symbol: 'H', x: 0, y: 0, z: 0 }],
+    });
+    expect(gjf).toContain('Checkpoint geometry optimization');
+    expect(gjf).toContain('0 2');
+    expect(gjf).not.toContain(' H       0.000000');
+  });
+
   it('rejects checkpoint names containing path or line-break syntax', () => {
     const base = {
       route: { method: 'HF', basisSet: '3-21G', jobType: 'SP' },

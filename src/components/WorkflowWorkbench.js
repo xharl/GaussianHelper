@@ -700,7 +700,8 @@ function requiresRouteKeyword(config, keyword) {
 
 function requiresCheckpointInput(config) {
   const routeText = `${config.route?.jobType || ''} ${config.route?.custom || ''}`;
-  return /\bGeom\s*=\s*AllCheck\b/i.test(routeText) || /\bGuess\s*=\s*Read\b/i.test(routeText);
+  return /\bGeom\s*=\s*(?:\(\s*)?(?:AllCheck|Checkpoint)\b/i.test(routeText)
+    || /\bGuess\s*=\s*Read\b/i.test(routeText);
 }
 
 function safeBaseName(value) {

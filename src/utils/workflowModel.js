@@ -329,13 +329,13 @@ function validateCheckpointBindings(tasks, errors) {
     const link0 = task.config?.link0 || {};
     const checkpointName = link0.checkpoint;
     const routeText = `${task.config?.route?.jobType || ''} ${task.config?.route?.custom || ''}`;
-    const readsCheckpoint = /\bGeom\s*=\s*AllCheck\b/i.test(routeText)
+    const readsCheckpoint = /\bGeom\s*=\s*(?:\(\s*)?(?:AllCheck|Checkpoint)\b/i.test(routeText)
       || /\bGuess\s*=\s*Read\b/i.test(routeText);
     if (checkpointName && !SAFE_CHECKPOINT_NAME.test(checkpointName)) {
       errors.push(`Task "${task.id}" checkpoint filename must be a safe .chk basename.`);
     }
     if (readsCheckpoint && !task.checkpointFromTaskId) {
-      errors.push(`Task "${task.id}" uses checkpoint input keywords and needs a checkpoint source dependency.`);
+      errors.push(`Task "${task.id}" uses Geom=Checkpoint, Geom=AllCheck, or Guess=Read checkpoint input keywords and needs a checkpoint source dependency.`);
     }
     if (link0.oldCheckpoint && !task.checkpointFromTaskId) {
       errors.push(`Task "${task.id}" cannot set OldChk outside a checkpoint dependency binding.`);

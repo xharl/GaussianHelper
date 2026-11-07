@@ -114,6 +114,11 @@ export function buildRouteSection(route) {
  *   Atom coordinates.
  */
 
+function routeHasGeometrySource(route, option) {
+  const routeText = `${route?.jobType || ''} ${route?.custom || ''}`;
+  return new RegExp(`\\bGeom\\s*=\\s*(?:\\(\\s*)?${option}\\b`, 'i').test(routeText);
+}
+
 /**
  * Generate a complete Gaussian .gjf input file from a configuration object.
  *
@@ -177,8 +182,12 @@ export function generateGJF(config) {
   const routeLine = buildRouteSection(config.route);
   sections.push(routeLine);
 
-  // ── Blank line after route ──
+  // Geom=AllCheck reuses the title, charge, multiplicity, and geometry from the checkpoint.
   sections.push('');
+  if (routeHasGeometrySource(config.route, 'AllCheck')) {
+    sections.push('');
+    return sections.join('\n');
+  }
 
   // ── Title ──
   const title = (config.title || 'Gaussian calculation').trim();
@@ -194,17 +203,19 @@ export function generateGJF(config) {
     : 1;
   sections.push(`${charge} ${multiplicity}`);
 
-  // ── Atom coordinates ──
-  if (atoms.length > 0) {
-    for (const atom of atoms) {
-      const sym = (atom.symbol || 'X').padEnd(2, ' ');
-      const x = formatCoordinate(atom.x);
-      const y = formatCoordinate(atom.y);
-      const z = formatCoordinate(atom.z);
-      sections.push(` ${sym}  ${x}${y}${z}`);
+  // Geom=Checkpoint retrieves atomic positions but still requires charge/multiplicity.
+  if (!routeHasGeometrySource(config.route, 'Checkpoint')) {
+    if (atoms.length > 0) {
+      for (const atom of atoms) {
+        const sym = (atom.symbol || 'X').padEnd(2, ' ');
+        const x = formatCoordinate(atom.x);
+        const y = formatCoordinate(atom.y);
+        const z = formatCoordinate(atom.z);
+        sections.push(` ${sym}  ${x}${y}${z}`);
+      }
+    } else {
+      sections.push(' ! [Draw or import a structure to add coordinates here]');
     }
-  } else {
-    sections.push(' ! [Draw or import a structure to add coordinates here]');
   }
 
 

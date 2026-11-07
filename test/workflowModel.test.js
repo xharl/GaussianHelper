@@ -157,6 +157,19 @@ describe('workflow project validation', () => {
     const invalid = validateWorkflowProject(project);
     expect(invalid.valid).toBe(false);
     expect(invalid.errors.join(' ')).toMatch(/checkpoint input keywords.*source dependency/i);
+
+    const geomCheckpoint = makeTask('geom-checkpoint', ['opt'], {
+      checkpointFromTaskId: 'opt',
+      config: {
+        ...makeTask('geom-checkpoint').config,
+        route: { method: 'HF', basisSet: '3-21G', jobType: 'SP Geom=Checkpoint' },
+      },
+    });
+    const geometryProject = makeProject([makeTask('opt'), geomCheckpoint]);
+    expect(validateWorkflowProject(geometryProject).valid).toBe(true);
+    geomCheckpoint.checkpointFromTaskId = null;
+    expect(validateWorkflowProject(geometryProject).errors.join(' '))
+      .toMatch(/Geom=Checkpoint.*checkpoint source/i);
   });
 
   it('rejects mismatched and colliding checkpoint filenames', () => {
