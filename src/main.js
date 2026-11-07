@@ -14,6 +14,7 @@ import { Viewer3D } from './components/Viewer3D.js';
 import { Header } from './components/Header.js';
 import { BatchGenerator } from './components/BatchGenerator.js';
 import { GaussianOutputInspector } from './components/GaussianOutputInspector.js';
+import { WorkflowWorkbench } from './components/WorkflowWorkbench.js';
 import { getHillFormula } from './utils/elements.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -33,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <button type="button" class="tab active" data-output-tab="calc">Current Job</button>
       <button type="button" class="tab" data-output-tab="batch">Batch Queue</button>
       <button type="button" class="tab" data-output-tab="inspector">Output Inspector</button>
+      <button type="button" class="tab" data-output-tab="workbench">Workflow Workbench</button>
     </div>
     <div id="calc-tab-content" class="tab-panel-content animate-in">
       <div id="viewer-container-target" class="animate-in"></div>
@@ -40,12 +42,14 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
     <div id="batch-tab-content" class="tab-panel-content hidden animate-in"></div>
     <div id="inspector-tab-content" class="tab-panel-content hidden animate-in"><div id="inspector-container-target"></div></div>
+    <div id="workflow-tab-content" class="tab-panel-content hidden animate-in"><div id="workflow-container-target"></div></div>
   `;
 
   const viewerContainer = document.getElementById('viewer-container-target');
   const previewContainer = document.getElementById('preview-container-target');
   const batchTabContent = document.getElementById('batch-tab-content');
   const inspectorContainer = document.getElementById('inspector-container-target');
+  const workflowContainer = document.getElementById('workflow-container-target');
 
   // Initialize components
   const viewer3d = new Viewer3D(viewerContainer);
@@ -55,12 +59,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const calcTabContent = document.getElementById('calc-tab-content');
   const batchTabContentElement = document.getElementById('batch-tab-content');
   const inspectorTabContent = document.getElementById('inspector-tab-content');
+  const workflowTabContent = document.getElementById('workflow-tab-content');
 
   function showOutputTab(target) {
     tabButtons.forEach(button => button.classList.toggle('active', button.dataset.outputTab === target));
     calcTabContent.classList.toggle('hidden', target !== 'calc');
     batchTabContentElement.classList.toggle('hidden', target !== 'batch');
     inspectorTabContent.classList.toggle('hidden', target !== 'inspector');
+    workflowTabContent.classList.toggle('hidden', target !== 'workbench');
 
     if (target === 'calc' && viewer3d?.viewer) {
       viewer3d.viewer.zoomTo();
@@ -120,6 +126,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   });
   new GaussianOutputInspector(inspectorContainer);
+  new WorkflowWorkbench(workflowContainer, () => gjfPreview.buildConfig(
+    parameterPanel.getState(),
+    moleculeInput.getState(),
+  ));
 
   // Pre-load default simple molecule (Water) on startup
   const smilesInput = document.getElementById('smiles-input');

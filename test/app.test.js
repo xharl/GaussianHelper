@@ -157,6 +157,36 @@ describe('Gaussian Job File (GJF) Generator', () => {
     expect(gjf.endsWith('\n')).toBe(true); // Must end with a single blank line
   });
 
+  it('should emit an old checkpoint before the new checkpoint when chaining calculations', () => {
+    const config = {
+      link0: { oldCheckpoint: 'opt.chk', checkpoint: 'freq.chk' },
+      route: { method: 'HF', basisSet: '3-21G', jobType: 'Freq Geom=AllCheck Guess=Read' },
+      title: 'Frequency from optimized geometry',
+      charge: 0,
+      multiplicity: 2,
+      atoms: [{ symbol: 'H', x: 0, y: 0, z: 0 }],
+    };
+    const gjf = generateGJF(config);
+    expect(gjf).toContain('%OldChk=opt.chk');
+    expect(gjf.indexOf('%OldChk=opt.chk')).toBeLessThan(gjf.indexOf('%Chk=freq.chk'));
+    expect(gjf).toContain('#N HF/3-21G Freq Geom=AllCheck Guess=Read');
+  });
+
+  it('rejects checkpoint names containing path or line-break syntax', () => {
+    const base = {
+      route: { method: 'HF', basisSet: '3-21G', jobType: 'SP' },
+      title: 'Checkpoint validation',
+      charge: 0,
+      multiplicity: 2,
+      atoms: [{ symbol: 'H', x: 0, y: 0, z: 0 }],
+    };
+    expect(() => generateGJF({ ...base, link0: { oldCheckpoint: `previous.chk
+%Chk=other.chk` } }))
+      .toThrow(/checkpoint filename/i);
+    expect(() => generateGJF({ ...base, link0: { checkpoint: '../outside.chk' } }))
+      .toThrow(/checkpoint filename/i);
+  });
+
   it('should reject non-finite coordinates instead of generating invalid Gaussian geometry', () => {
     const config = {
       route: { method: 'HF', basisSet: '6-31G' },

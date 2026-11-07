@@ -21,6 +21,7 @@ It runs entirely client-side, providing a fast, graphical tool for setting up in
   - **Windows Batch Control Files** (`.bcf`) for Gaussian's native queuing.
   - **Linux Shell Scripts** (`.sh`) for sequential terminal executions (includes start/end timestamp echoes and completion checks).
 - **Gaussian Output Inspector**: Inspect multiple `.log` / `.out` files locally. Summarize termination, SCF energy/convergence, optimization markers, frequencies, warnings, and errors with source line evidence; export a batch CSV report.
+- **Workflow Workbench**: Organize calculation snapshots as a dependency graph, link checkpoint files with `%OldChk`, export only ready steps, import their logs for explicit validation gates, and save/load a portable local project file.
 - **CORS-Bypassing Portable Launchers**:
   - `run.bat` for Windows (uses native PowerShell and .NET listener).
   - `run.sh` for Linux (uses system-native Python 3/2 HTTP server).
@@ -43,7 +44,7 @@ npm run dev
 ```
 
 ### 3. Run Unit Test Suite
-Runs Vitest headlessly to verify element/formula utilities, validation, GJF generation, coordinate parsers, and the Gaussian output inspector:
+Runs Vitest headlessly to verify element/formula utilities, validation, GJF generation, coordinate parsers, the output inspector, and workflow planning/validation:
 ```bash
 npm test
 ```
@@ -77,7 +78,15 @@ No software installation is required.
 
 Open the **Output Inspector** tab and drop or select multiple Gaussian `.log` / `.out` files. Files are read locally in the browser; the app does not upload or persist them. The inspector reports termination markers, SCF energies and explicit convergence text, optimization markers, frequencies (including negative-mode values), and matching warnings/errors with line references. Export the section-level comparison as CSV.
 
-Statuses describe text found in the output, not whether a calculation is scientifically correct. Missing or unrecognized markers remain **unknown** or **incomplete**; absence of a warning is not proof of a successful or valid calculation.
+Statuses are text-derived findings, not proof of scientific correctness. Missing or unrecognized markers remain **unknown** or **incomplete**; absence of a warning is not proof of a successful or valid calculation.
+
+## 🧭 Workflow Workbench
+
+Open **Workflow Workbench** to snapshot the current Gaussian job as a task. Add prerequisites to form a directed acyclic workflow; the list is topologically ordered and rejects cycles. A downstream task stays blocked until every prerequisite output passes. Tasks using `Geom=AllCheck` or `Guess=Read` must explicitly depend on a task with a checkpoint, and generated inputs include `%OldChk` plus a distinct `%Chk`.
+
+For each ready task, download its `.gjf`, run it outside GaussianHelper, then import the resulting `.log` / `.out`. A unique filename match is assigned automatically only when that task is awaiting output; unmatched files and multi-section logs require an explicit task/section choice. The Workbench checks normal termination, route-required optimization/frequency evidence, optional SCF evidence, and optional expected imaginary-mode count. Unknown required evidence does not pass and does not unlock dependent work. Failed steps can be retried; changing inputs/dependencies/gates invalidates affected downstream results.
+
+The browser does **not** run Gaussian or stop an external batch job. It exports one ready task at a time so the user can validate each result before requesting its dependent input. **Save project** / **Open project** use a versioned `.ghproject.json` file that stores task configurations and bounded parsed evidence, not raw log contents; nothing is uploaded or autosaved.
 
 ## 🤖 AI Disclaimer
 * **Note**: This project has been developed with the assistance of agentic artificial intelligence (AI) models. While the application, files parsers, and input generators have been tested, users are advised to verify their generated Gaussian Job Files (`.gjf`) and execution scripts before running calculations on production clusters.

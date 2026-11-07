@@ -9,6 +9,7 @@
  * Semi-empirical methods that do not take an external basis set.
  * @type {Set<string>}
  */
+const SAFE_CHECKPOINT_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,126}\.chk$/i;
 const NO_BASIS_METHODS = new Set([
   'AM1', 'PM3', 'PM6', 'PM7', 'MNDO', 'MINDO3', 'INDO', 'CNDO',
   'ZINDO', 'PDDG', 'RM1',
@@ -18,6 +19,13 @@ const NO_BASIS_METHODS = new Set([
   'G4', 'G4MP2',
   'W1U', 'W1BD', 'W1RO', 'W2U', 'W2BD',
 ]);
+
+function validateCheckpointName(value) {
+  if (typeof value !== 'string' || !SAFE_CHECKPOINT_NAME.test(value.trim())) {
+    throw new Error('Checkpoint filename must be a safe .chk basename without path separators or line breaks.');
+  }
+  return value.trim();
+}
 
 /**
  * Format a floating-point coordinate value to 6 decimal places,
@@ -95,6 +103,7 @@ export function buildRouteSection(route) {
  * @property {Object} link0 - Link 0 commands.
  * @property {string} [link0.memory] - Memory allocation (e.g. '8GB').
  * @property {number|string} [link0.nproc] - Number of processors.
+ * @property {string} [link0.oldCheckpoint] - Existing checkpoint file to read.
  * @property {string} [link0.checkpoint] - Checkpoint file name.
  * @property {string} [link0.other] - Any other %commands (one per line).
  * @property {Object} route - Route section configuration (see {@link buildRouteSection}).
@@ -149,8 +158,11 @@ export function generateGJF(config) {
   if (link0.nproc !== undefined && link0.nproc !== null && String(link0.nproc).trim()) {
     sections.push(`%NProcShared=${String(link0.nproc).trim()}`);
   }
-  if (link0.checkpoint && link0.checkpoint.trim()) {
-    sections.push(`%Chk=${link0.checkpoint.trim()}`);
+  if (link0.oldCheckpoint !== undefined && link0.oldCheckpoint !== null && String(link0.oldCheckpoint).trim()) {
+    sections.push(`%OldChk=${validateCheckpointName(link0.oldCheckpoint)}`);
+  }
+  if (link0.checkpoint !== undefined && link0.checkpoint !== null && String(link0.checkpoint).trim()) {
+    sections.push(`%Chk=${validateCheckpointName(link0.checkpoint)}`);
   }
   if (link0.other && link0.other.trim()) {
     // Support multi-line additional Link0 commands
