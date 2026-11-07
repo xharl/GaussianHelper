@@ -438,7 +438,12 @@ export class BatchGenerator {
       if (this.bcfComment) {
         lines.push(`! ${this.bcfComment}`);
       }
-      lines.push(`Start=${this.startIndex}`);
+      // Gaussian's batch control format only recognizes Start on a comment line
+      // (`! Start=n`), not as a bare keyword. The line is emitted even when the
+      // start index is 1: omitting it would also mean "begin with the first job",
+      // but writing it keeps the exported file explicit and consistent with the
+      // Start Index control in the UI.
+      lines.push(`! Start=${this.startIndex}`);
       this.queue.forEach(item => {
         lines.push(`${item.inputName}, ${item.outputName}`);
       });
