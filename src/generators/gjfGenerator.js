@@ -480,9 +480,52 @@ export function buildFragmentAssignment(fragments, atomCount) {
  *   or a single fragment keeps the plain `charge multiplicity` layout.
  */
 
-function routeHasGeometrySource(route, option) {
+/**
+ * Parse the options of every `Geom=` occurrence in the route text.
+ *
+ * Gaussian accepts both `Geom=Checkpoint` and the parenthesised list form
+ * `Geom=(Checkpoint,Step=3)` (https://gaussian.com/geom/). Matching the whole
+ * `Geom=` value, rather than requiring the wanted option to come first, keeps
+ * `Geom=(Step=3,Checkpoint)` from being mistaken for a route without a
+ * checkpoint source.
+ *
+ * @param {Object} route
+ * @returns {string[]} Lower-cased option names, without their `=value` part.
+ */
+function routeGeomOptions(route) {
   const routeText = `${route?.jobType || ''} ${route?.custom || ''}`;
-  return new RegExp(`\\bGeom\\s*=\\s*(?:\\(\\s*)?${option}\\b`, 'i').test(routeText);
+  const options = [];
+  const pattern = /\bGeom\s*=\s*(?:\(([^)]*)\)|([^\s]+))/gi;
+  let match;
+  while ((match = pattern.exec(routeText)) !== null) {
+    const value = match[1] ?? match[2] ?? '';
+    for (const item of value.split(',')) {
+      const option = item.trim().replace(/=.*$/, '').toLowerCase();
+      if (option) options.push(option);
+    }
+  }
+  return options;
+}
+
+function routeHasGeomOption(route, option) {
+  return routeGeomOptions(route).includes(String(option).toLowerCase());
+}
+
+/**
+ * Whether the route retrieves geometry from the checkpoint.
+ *
+ * `Check` is the legacy spelling of `Checkpoint` (Gaussian 09 and earlier;
+ * Gaussian's current keyword pages still refer to `Geom=Check` as the
+ * Checkpoint option). `Geom=Step=N` only reads a checkpoint geometry when
+ * combined with `Checkpoint`/`AllCheck`, but the parenthesised form is parsed
+ * as a whole, so `Geom=(Step=3,Checkpoint)` is recognised too.
+ *
+ * @param {Object} route
+ * @returns {boolean}
+ */
+function routeUsesCheckpointGeometry(route) {
+  const options = routeGeomOptions(route);
+  return options.includes('checkpoint') || options.includes('check');
 }
 
 /**
@@ -559,7 +602,7 @@ export function generateGJF(config) {
 
   // Geom=AllCheck reuses the title, charge, multiplicity, and geometry from the checkpoint.
   sections.push('');
-  if (routeHasGeometrySource(config.route, 'AllCheck')) {
+  if (routeHasGeomOption(config.route, 'AllCheck')) {
     if (genecp) {
       throw new Error(
         'GenECP cannot be combined with Geom=AllCheck: the basis and ECP sections must follow an explicit geometry.'
@@ -579,7 +622,7 @@ export function generateGJF(config) {
   const multiFragment = Array.isArray(fragments) && fragments.length > 1;
 
   // Geom=Checkpoint omits the atom lines, which are what carry (Fragment=N).
-  if (multiFragment && routeHasGeometrySource(config.route, 'Checkpoint')) {
+  if (multiFragment && routeUsesCheckpointGeometry(config.route)) {
     throw new Error(
       'Fragment specifications cannot be combined with Geom=Checkpoint: the atom lines that ' +
       'carry (Fragment=N) are not written.'
@@ -610,7 +653,7 @@ export function generateGJF(config) {
   );
 
   // Geom=Checkpoint retrieves atomic positions but still requires charge/multiplicity.
-  if (!routeHasGeometrySource(config.route, 'Checkpoint')) {
+  if (!routeUsesCheckpointGeometry(config.route)) {
     if (atoms.length > 0) {
       if (multiFragment) {
         // Atoms carry their fragment number in a parenthesized parameter, the
@@ -658,4 +701,60 @@ export function generateGJF(config) {
   sections.push('');
 
   return sections.join('\n');
+}
+
+/**
+ * Build one Gaussian input file containing two job steps separated by the
+ * documented `--Link1--` line.
+ *
+ * Gaussian 16 documents multistep input as complete job steps separated by a
+ * line containing `--Link1--`, with a blank line required before that line,
+ * and Link 0 commands given per step:
+ * https://gaussian.com/input/ . `%OldChk` copies the named file into the
+ * current step's `%Chk` at the start of that step, which is how the second link
+ * picks up the first link's checkpoint:
+ * https://gaussian.com/link0/ .
+ *
+ * Link 0 commands therefore are not a first-link-only preamble: the upstream
+ * step names its `%Chk`, and the continuation names `%OldChk` (the upstream
+ * file) plus its own distinct `%Chk`. Both blocks are emitted so the file is
+ * valid when each step is read in turn.
+ *
+ * @param {[GjfConfig, GjfConfig]} configs - `[upstream, continuation]`.
+ * @returns {string} A single input file ready for one `g16` invocation.
+ * @throws {Error} If the pair does not form a checkpoint continuation.
+ */
+export function buildLink1Input(configs) {
+  if (!Array.isArray(configs) || configs.length !== 2) {
+    throw new Error('Link1 input requires exactly two configurations: [upstream, continuation].');
+  }
+  const [upstream, continuation] = configs;
+  const upstreamCheckpoint = String(upstream?.link0?.checkpoint || '').trim();
+  const continuationOldCheckpoint = String(continuation?.link0?.oldCheckpoint || '').trim();
+  const continuationCheckpoint = String(continuation?.link0?.checkpoint || '').trim();
+
+  if (!upstreamCheckpoint) {
+    throw new Error('The upstream job must name a checkpoint file (%Chk) so the continuation can read it.');
+  }
+  if (!continuationOldCheckpoint) {
+    throw new Error('The continuation job must set %OldChk to the upstream checkpoint file.');
+  }
+  if (continuationOldCheckpoint.toLowerCase() !== upstreamCheckpoint.toLowerCase()) {
+    throw new Error(
+      `The continuation job's %OldChk (${continuationOldCheckpoint}) must name the upstream checkpoint (${upstreamCheckpoint}).`
+    );
+  }
+  if (continuationCheckpoint && continuationCheckpoint.toLowerCase() === upstreamCheckpoint.toLowerCase()) {
+    throw new Error(
+      'The continuation job must write a distinct checkpoint file; %Chk cannot equal the upstream %OldChk file.'
+    );
+  }
+
+  const upstreamText = generateGJF(upstream).replace(/\n+$/, '');
+  // Keep the continuation's own section terminator: an AllCheck step ends with
+  // a blank line after its route section, and stripping it would merge that
+  // section into EOF.
+  const continuationText = generateGJF(continuation);
+  const terminated = continuationText.endsWith('\n') ? continuationText : `${continuationText}\n`;
+  return `${upstreamText}\n\n--Link1--\n${terminated}`;
 }

@@ -1,4 +1,5 @@
 import { parseGaussianLogStream, parseGaussianLogText } from '../parsers/gaussianLogParser.js';
+import { buildLink1Input } from '../generators/gjfGenerator.js';
 import { evaluateWorkflowOutput } from '../utils/workflowGates.js';
 import { buildWorkflowBundle } from '../utils/bundleExport.js';
 import { buildTaskInputText } from '../utils/workflowInput.js';
@@ -12,6 +13,7 @@ import {
   deriveTaskStates,
   invalidateTaskAndDescendants,
   parseWorkflowProjectJson,
+  routeReadsCheckpoint,
   serializeWorkflowProject,
   topologicallySortTasks,
   validateWorkflowProject,
@@ -25,6 +27,11 @@ const STATUS_LABELS = {
   failed: 'Failed',
   incomplete: 'Incomplete',
   'needs-review': 'Needs review',
+};
+
+const CONTINUATION_ROUTES = {
+  checkpoint: 'Geom=Checkpoint Guess=Read',
+  allcheck: 'Geom=AllCheck',
 };
 
 export class WorkflowWorkbench {
@@ -78,6 +85,13 @@ export class WorkflowWorkbench {
             ${this.renderPendingOutputs()}
             ${this.project.tasks.length ? `
               <div class="workflow-add-options">
+                <label class="workflow-field"><span>This job</span>
+                  <select id="workflow-new-intent" class="form-input">
+                    <option value="standalone">Starts from the structure in the editor</option>
+                    <option value="checkpoint">Continues from an earlier step (Geom=Checkpoint Guess=Read)</option>
+                    <option value="allcheck">Continues from an earlier step (Geom=AllCheck)</option>
+                  </select>
+                </label>
                 <label class="workflow-field"><span>Depends on</span>
                   <select id="workflow-new-dependencies" class="form-input" multiple size="3">${taskOptions}</select>
                 </label>
@@ -146,8 +160,13 @@ export class WorkflowWorkbench {
     this.container.querySelector('#workflow-add-task')?.addEventListener('click', () => {
       const dependencySelect = this.container.querySelector('#workflow-new-dependencies');
       const checkpointSelect = this.container.querySelector('#workflow-new-checkpoint');
+      const intentSelect = this.container.querySelector('#workflow-new-intent');
       const dependencies = Array.from(dependencySelect?.selectedOptions || []).map(option => option.value);
-      this.addCurrentTask({ dependencies, checkpointFromTaskId: checkpointSelect?.value || null });
+      this.addCurrentTask({
+        dependencies,
+        checkpointFromTaskId: checkpointSelect?.value || null,
+        intent: intentSelect?.value || 'standalone',
+      });
     });
 
     this.container.querySelector('#workflow-queue-conformers')?.addEventListener('click', () => {
@@ -160,6 +179,7 @@ export class WorkflowWorkbench {
       button.addEventListener('click', () => {
         const { workflowAction: action, taskId } = button.dataset;
         if (action === 'export') this.downloadTask(taskId);
+        else if (action === 'export-link1') this.downloadTaskLink1(taskId);
         else if (action === 'replace') this.replaceTaskFromCurrent(taskId);
         else if (action === 'duplicate') this.duplicateTask(taskId);
         else if (action === 'remove') this.removeTask(taskId);
@@ -235,7 +255,7 @@ export class WorkflowWorkbench {
               </select>
             </label>
           </div>
-          ${checkpointRequired && !task.checkpointFromTaskId ? '<div class="workflow-blocked-reason">This route needs a checkpoint source (Geom=AllCheck / Guess=Read).</div>' : ''}
+          ${checkpointRequired && !task.checkpointFromTaskId ? '<div class="workflow-blocked-reason">This route needs a checkpoint source (Geom=Checkpoint, Geom=AllCheck, Geom=Check, Geom=Step=N, or Guess=Read).</div>' : ''}
           <button type="button" class="btn btn-secondary btn-sm" data-workflow-action="apply-dependencies" data-task-id="${escapeHtml(task.id)}">Apply dependencies</button>
           <fieldset class="workflow-gates">
             <legend>Output gates</legend>
@@ -255,6 +275,7 @@ export class WorkflowWorkbench {
           ${latestAttempt ? this.renderAttempt(latestAttempt) : ''}
           <div class="workflow-task-actions">
             <button type="button" class="btn btn-primary btn-sm" data-workflow-action="export" data-task-id="${escapeHtml(task.id)}" ${state !== 'ready' ? 'disabled' : ''}>Download ready input</button>
+            ${task.checkpointFromTaskId ? `<button type="button" class="btn btn-secondary btn-sm" data-workflow-action="export-link1" data-task-id="${escapeHtml(task.id)}" ${state !== 'ready' ? 'disabled' : ''} title="One input file: upstream step, --Link1--, then this step">Download with upstream (--Link1--)</button>` : ''}
             ${['failed', 'incomplete', 'needs-review'].includes(state) ? `<button type="button" class="btn btn-secondary btn-sm" data-workflow-action="retry" data-task-id="${escapeHtml(task.id)}">Retry step</button>` : ''}
             <button type="button" class="btn btn-secondary btn-sm" data-workflow-action="replace" data-task-id="${escapeHtml(task.id)}">Replace from current job</button>
             <button type="button" class="btn btn-secondary btn-sm" data-workflow-action="duplicate" data-task-id="${escapeHtml(task.id)}">Duplicate</button>
@@ -352,11 +373,20 @@ export class WorkflowWorkbench {
     return true;
   }
 
-  addCurrentTask({ dependencies = [], checkpointFromTaskId = null } = {}) {
+  addCurrentTask({ dependencies = [], checkpointFromTaskId = null, intent = 'standalone' } = {}) {
     try {
       let config = this.getActiveConfig?.();
       if (!config) throw new Error('The current job has no valid Gaussian input configuration.');
       config = cloneJson(config);
+      config = applyContinuationIntent(config, intent);
+      if (isContinuationIntent(intent)) {
+        if (!checkpointFromTaskId) {
+          throw new Error('This task continues from a checkpoint; choose the upstream task to read it from.');
+        }
+        if (!dependencies.includes(checkpointFromTaskId)) {
+          throw new Error('The checkpoint source must also be selected as a direct dependency.');
+        }
+      }
       config.link0 ||= {};
       delete config.link0.oldCheckpoint;
       const base = safeBaseName(config.link0.checkpoint || config.title || 'calculation');
@@ -631,6 +661,66 @@ export class WorkflowWorkbench {
     return this.markTaskAwaitingOutput(taskId);
   }
 
+  /**
+   * Build the single-file `--Link1--` variant of a continuation task: the
+   * upstream step and this step in one Gaussian input, so a scheduler can run
+   * the chain as one queued entity. The task must still be `ready`; this is an
+   * explicit alternative to the normal one-task `.gjf`, not a replacement.
+   *
+   * @param {string} taskId
+   * @returns {string} Gaussian input text containing both links.
+   */
+  buildTaskLink1Input(taskId) {
+    const task = this.project.tasks.find(item => item.id === taskId);
+    if (!task) throw new Error(`Unknown task "${taskId}".`);
+    if (!task.checkpointFromTaskId) {
+      throw new Error('This task has no checkpoint source; Link1 export is only available for a continuation task.');
+    }
+    const states = deriveTaskStates(this.project);
+    if (states[taskId] !== 'ready') {
+      throw new Error(`Task is not ready to export (current state: ${states[taskId]}).`);
+    }
+    const upstream = this.project.tasks.find(item => item.id === task.checkpointFromTaskId);
+    if (!upstream?.config?.link0?.checkpoint) {
+      throw new Error(`Task "${taskId}" checkpoint source has no checkpoint file.`);
+    }
+
+    const upstreamConfig = cloneJson(upstream.config);
+    upstreamConfig.link0 ||= {};
+    if (upstream.checkpointFromTaskId) {
+      const earlier = this.project.tasks.find(item => item.id === upstream.checkpointFromTaskId);
+      if (!earlier?.config?.link0?.checkpoint) {
+        throw new Error(`Task "${upstream.id}" checkpoint source has no checkpoint file.`);
+      }
+      upstreamConfig.link0.oldCheckpoint = earlier.config.link0.checkpoint;
+    }
+
+    const continuationConfig = cloneJson(task.config);
+    continuationConfig.link0 ||= {};
+    continuationConfig.link0.oldCheckpoint = upstream.config.link0.checkpoint;
+    return buildLink1Input([upstreamConfig, continuationConfig]);
+  }
+
+  downloadTaskLink1(taskId) {
+    let gjf;
+    try {
+      gjf = this.buildTaskLink1Input(taskId);
+    } catch (error) {
+      this.statusMessage = error instanceof Error ? error.message : String(error);
+      this.render();
+      return false;
+    }
+    const task = this.project.tasks.find(item => item.id === taskId);
+    const filename = `${safeBaseName(task.inputName.replace(/\.gjf$/i, ''))}-link1.gjf`;
+    downloadTextFile(gjf, filename, 'text/plain;charset=utf-8');
+    const marked = this.markTaskAwaitingOutput(taskId);
+    if (marked) {
+      this.statusMessage = `Prepared ${filename}: the upstream step and ${task.title} run as one Gaussian job chain. Import the downstream section of the resulting log here.`;
+      this.render();
+    }
+    return marked;
+  }
+
   downloadBundle() {
     if (this.project.tasks.length === 0) {
       this.statusMessage = 'Add at least one calculation task before exporting a bundle.';
@@ -809,8 +899,41 @@ function requiresRouteKeyword(config, keyword) {
 
 function requiresCheckpointInput(config) {
   const routeText = `${config.route?.jobType || ''} ${config.route?.custom || ''}`;
-  return /\bGeom\s*=\s*(?:\(\s*)?(?:AllCheck|Checkpoint)\b/i.test(routeText)
-    || /\bGuess\s*=\s*Read\b/i.test(routeText);
+  return routeReadsCheckpoint(routeText);
+}
+
+function isContinuationIntent(intent) {
+  return Object.hasOwn(CONTINUATION_ROUTES, intent);
+}
+
+/**
+ * Apply the task-editor intent to a snapshot of the active route.
+ *
+ * The user should not have to hand-type `Geom=Checkpoint Guess=Read`. Existing
+ * `Geom=` (and, for the checkpoint mode, `Guess=`) tokens are replaced rather
+ * than duplicated, so a route that already carried an old spelling cannot end
+ * up with two conflicting keywords.
+ *
+ * @param {Object} config
+ * @param {'standalone'|'checkpoint'|'allcheck'} intent
+ * @returns {Object} A new config (the input is not mutated).
+ */
+function applyContinuationIntent(config, intent) {
+  if (intent === undefined || intent === null || intent === 'standalone') return config;
+  const tokens = CONTINUATION_ROUTES[intent];
+  if (!tokens) throw new Error(`Unknown task intent "${intent}".`);
+
+  const route = { ...config.route };
+  const geomPattern = /\bGeom\s*=\s*(?:\([^)]*\)|\S+)/gi;
+  const guessPattern = /\bGuess\s*=\s*(?:\([^)]*\)|\S+)/gi;
+  for (const field of ['jobType', 'custom']) {
+    if (typeof route[field] !== 'string') continue;
+    let value = route[field].replace(geomPattern, ' ');
+    if (intent === 'checkpoint') value = value.replace(guessPattern, ' ');
+    route[field] = value.replace(/\s+/g, ' ').trim();
+  }
+  route.custom = [route.custom, tokens].filter(Boolean).join(' ').trim();
+  return { ...config, route };
 }
 
 function safeBaseName(value) {

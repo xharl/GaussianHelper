@@ -397,19 +397,52 @@ function validateUniqueArtifacts(tasks, errors) {
   }
 }
 
+/**
+ * Whether a route section reads data from the checkpoint file.
+ *
+ * Recognised spellings (all documented by Gaussian):
+ * - `Geom=Checkpoint` and the legacy `Geom=Check` (Gaussian 09 spelling of the
+ *   same option), and `Geom=AllCheck`;
+ * - `Geom=Step=N` / `Geom=Step=Original`, which retrieve an optimisation step
+ *   and must be combined with `Checkpoint`, `AllCheck` or `Modify`;
+ * - `Guess=Read`.
+ *
+ * Parenthesised lists such as `Geom=(Step=3,Checkpoint)` are parsed option by
+ * option, so a keyword anywhere in the list counts.
+ * https://gaussian.com/geom/ , https://gaussian.com/guess/
+ *
+ * @param {string} routeText - Concatenated route fields (`jobType`, `custom`).
+ * @returns {boolean}
+ */
+export function routeReadsCheckpoint(routeText) {
+  const text = String(routeText || '');
+  if (/\bGuess\s*=\s*Read\b/i.test(text)) return true;
+
+  const pattern = /\bGeom\s*=\s*(?:\(([^)]*)\)|([^\s]+))/gi;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const value = match[1] ?? match[2] ?? '';
+    for (const item of value.split(',')) {
+      const option = item.trim();
+      if (/^(?:AllCheck|Checkpoint|Check)$/i.test(option)) return true;
+      if (/^Step\s*=\s*(?:\d+|Original)$/i.test(option)) return true;
+    }
+  }
+  return false;
+}
+
 function validateCheckpointBindings(tasks, errors) {
   const byId = new Map(tasks.map(task => [task.id, task]));
   for (const task of tasks) {
     const link0 = task.config?.link0 || {};
     const checkpointName = link0.checkpoint;
     const routeText = `${task.config?.route?.jobType || ''} ${task.config?.route?.custom || ''}`;
-    const readsCheckpoint = /\bGeom\s*=\s*(?:\(\s*)?(?:AllCheck|Checkpoint)\b/i.test(routeText)
-      || /\bGuess\s*=\s*Read\b/i.test(routeText);
+    const readsCheckpoint = routeReadsCheckpoint(routeText);
     if (checkpointName && !SAFE_CHECKPOINT_NAME.test(checkpointName)) {
       errors.push(`Task "${task.id}" checkpoint filename must be a safe .chk basename.`);
     }
     if (readsCheckpoint && !task.checkpointFromTaskId) {
-      errors.push(`Task "${task.id}" uses Geom=Checkpoint, Geom=AllCheck, or Guess=Read checkpoint input keywords and needs a checkpoint source dependency.`);
+      errors.push(`Task "${task.id}" uses Geom=Checkpoint, Geom=AllCheck, Geom=Check, Geom=Step=N, or Guess=Read checkpoint input keywords and needs a checkpoint source dependency.`);
     }
     if (link0.oldCheckpoint && !task.checkpointFromTaskId) {
       errors.push(`Task "${task.id}" cannot set OldChk outside a checkpoint dependency binding.`);
