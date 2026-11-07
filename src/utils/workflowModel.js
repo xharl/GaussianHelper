@@ -618,7 +618,7 @@ function revalidateProjectAttempts(project) {
 }
 
 function sanitizeWorkflowProject(project) {
-  const routeKeys = ['verbosity', 'method', 'basisSet', 'jobType', 'scf', 'grid', 'dispersion', 'solvation', 'pop', 'custom'];
+  const routeKeys = ['verbosity', 'method', 'basisSet', 'jobType', 'scf', 'grid', 'dispersion', 'solvation', 'pop', 'custom', 'allowUnknownRouteTokens', 'strictRouteTokens', 'basisMode'];
   const link0Keys = ['memory', 'nproc', 'oldCheckpoint', 'checkpoint', 'other'];
   return {
     schemaVersion: WORKFLOW_SCHEMA_VERSION,
@@ -632,12 +632,42 @@ function sanitizeWorkflowProject(project) {
       config: {
         link0: Object.fromEntries(link0Keys.filter(key => task.config.link0?.[key] !== undefined)
           .map(key => [key, task.config.link0[key]])),
-        route: Object.fromEntries(routeKeys.filter(key => task.config.route[key] !== undefined)
-          .map(key => [key, task.config.route[key]])),
+        route: {
+          ...Object.fromEntries(routeKeys.filter(key => task.config.route[key] !== undefined)
+            .map(key => [key, task.config.route[key]])),
+          // GenECP carries structured per-element assignments that cannot live
+          // in a route string; they are part of the calculation and must survive
+          // save/load or the reloaded task would silently run a different model.
+          ...(Array.isArray(task.config.route.elementBasis)
+            ? {
+              elementBasis: task.config.route.elementBasis.map(assignment => ({
+                elements: [...assignment.elements],
+                basis: assignment.basis,
+              })),
+            }
+            : {}),
+          ...(Array.isArray(task.config.route.ecp)
+            ? {
+              ecp: task.config.route.ecp.map(assignment => ({
+                elements: [...assignment.elements],
+                ecp: assignment.ecp,
+              })),
+            }
+            : {}),
+        },
         title: task.config.title,
         charge: task.config.charge,
         multiplicity: task.config.multiplicity,
         atoms: task.config.atoms.map(atom => ({ symbol: atom.symbol, x: atom.x, y: atom.y, z: atom.z })),
+        ...(Array.isArray(task.config.fragments)
+          ? {
+            fragments: task.config.fragments.map(fragment => ({
+              charge: fragment.charge,
+              multiplicity: fragment.multiplicity,
+              atomRange: [...fragment.atomRange],
+            })),
+          }
+          : {}),
         ...(task.config.conformer ? { conformer: normalizeConformerMetadata(task.config.conformer) } : {}),
       },
       inputName: task.inputName,
@@ -761,8 +791,48 @@ function validateGjfConfigText(task, errors) {
   if (typeof config.title !== 'string' || config.title.length > 1000 || /[\r\n\0]/.test(config.title)) {
     errors.push(`Task "${task.id}" title must be a single line of at most 1000 characters.`);
   }
+  // Route values are mostly single-line strings, but three fields are
+  // structured: GenECP's per-element basis/ECP assignments and the two
+  // validation toggles. Validate those shapes explicitly instead of rejecting
+  // every non-string route value (which made a GenECP task unsaveable).
+  const ROUTE_BOOLEAN_FIELDS = new Set(['allowUnknownRouteTokens', 'strictRouteTokens']);
+  const ELEMENT_ASSIGNMENT_FIELDS = new Set(['elementBasis', 'ecp']);
   for (const [field, value] of Object.entries(config.route)) {
-    if (value !== undefined && (typeof value !== 'string' || value.length > 2000 || /[\r\n\0]/.test(value))) {
+    if (value === undefined) continue;
+    if (ROUTE_BOOLEAN_FIELDS.has(field)) {
+      if (typeof value !== 'boolean') {
+        errors.push(`Task "${task.id}" route field "${field}" must be a boolean.`);
+      }
+      continue;
+    }
+    if (field === 'basisMode') {
+      if (value !== 'GenECP') {
+        errors.push(`Task "${task.id}" route field "basisMode" must be "GenECP" when set.`);
+      }
+      continue;
+    }
+    if (ELEMENT_ASSIGNMENT_FIELDS.has(field)) {
+      const label = field === 'ecp' ? 'ecp keyword' : 'basis keyword';
+      if (!Array.isArray(value) || value.length === 0 || value.length > 40) {
+        errors.push(`Task "${task.id}" route field "${field}" must be a non-empty array of at most 40 assignments.`);
+        continue;
+      }
+      for (const assignment of value) {
+        const elements = assignment?.elements;
+        const keyword = field === 'ecp' ? assignment?.ecp : assignment?.basis;
+        if (!isRecord(assignment)
+          || !Array.isArray(elements) || elements.length === 0 || elements.length > 32
+          || elements.some(element => typeof element !== 'string' || !/^[A-Z][a-z]?$/.test(element))
+          || typeof keyword !== 'string' || keyword.length === 0 || keyword.length > 40
+          || !/^[A-Za-z0-9()+*,\-]+$/.test(keyword)) {
+          errors.push(
+            `Task "${task.id}" route field "${field}" entries must be { elements: [Symbol, …], ${label} }.`
+          );
+        }
+      }
+      continue;
+    }
+    if (typeof value !== 'string' || value.length > 2000 || /[\r\n\0]/.test(value)) {
       errors.push(`Task "${task.id}" route field "${field}" must be a single line of at most 2000 characters.`);
     }
   }

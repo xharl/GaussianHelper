@@ -620,8 +620,23 @@ export function validateInputCompleteness(state) {
       errors.push('Computational method is required.');
     }
 
-    // Basis set required only for methods that need one
-    if (state?.route?.method && methodNeedsBasis(state.route.method.trim())) {
+    // Basis set required only for methods that need one. GenECP replaces the
+    // single basis-set slot with per-element assignments (`Method/GenECP` plus
+    // basis blocks), so it satisfies the requirement without route.basisSet.
+    const basisMode = String(state?.route?.basisMode || '').trim();
+    const usesGenECP = basisMode.toLowerCase() === 'genecp';
+    const elementBasis = Array.isArray(state?.route?.elementBasis) ? state.route.elementBasis : null;
+    if (basisMode && !usesGenECP) {
+      errors.push(`Unknown basis mode "${basisMode}". The only supported value is 'GenECP'.`);
+    }
+    if (usesGenECP) {
+      if (!elementBasis || elementBasis.length === 0) {
+        errors.push('GenECP requires at least one per-element basis assignment (route.elementBasis).');
+      }
+      if (state.route.basisSet && state.route.basisSet.trim().length > 0) {
+        errors.push('GenECP assigns basis sets per element; clear the single basis-set field.');
+      }
+    } else if (state?.route?.method && methodNeedsBasis(state.route.method.trim())) {
       if (!state.route.basisSet || state.route.basisSet.trim().length === 0) {
         errors.push('Basis set is required for this method.');
       }
@@ -705,9 +720,10 @@ export function validateInputCompleteness(state) {
       }
     }
 
-    // Cross-validate method/basis
+    // Cross-validate method/basis. In GenECP mode the basis slot holds the
+    // GenECP keyword; the per-element assignments are the actual basis.
     if (state?.route?.method) {
-      const mbResult = validateMethodBasis(state.route.method, state.route.basisSet);
+      const mbResult = validateMethodBasis(state.route.method, usesGenECP ? 'GenECP' : state.route.basisSet);
       if (!mbResult.valid) {
         errors.push(mbResult.message);
       }
