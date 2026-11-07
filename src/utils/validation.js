@@ -6,6 +6,7 @@
  */
 
 import { getAtomicNumber } from './elements.js';
+import { methodIncludesDispersion } from '../data/methods.js';
 
 /**
  * Semi-empirical methods that do not require a basis set.
@@ -206,6 +207,16 @@ export function validateInputCompleteness(state) {
       if (!state.route.basisSet || state.route.basisSet.trim().length === 0) {
         errors.push('Basis set is required for this method.');
       }
+    }
+
+    // Methods that already include dispersion (e.g. B2PLYPD3) must not also
+    // request EmpiricalDispersion, which would double-count the correction.
+    const dispersion = (state?.route?.dispersion || '').trim();
+    if (dispersion && state?.route?.method && methodIncludesDispersion(state.route.method.trim())) {
+      errors.push(
+        `Method ${state.route.method.trim()} already includes an empirical dispersion correction; ` +
+        `remove ${dispersion} to avoid double-counting dispersion.`
+      );
     }
 
     // Job type

@@ -3,7 +3,7 @@
  * Handles all Gaussian calculation parameter configuration with custom select dropdown menus
  */
 
-import { methods, methodCategories } from '../data/methods.js';
+import { methods, methodCategories, methodIncludesDispersion } from '../data/methods.js';
 import { basisSets, basisSetCategories } from '../data/basisSets.js';
 import { solvents, solvationModels } from '../data/solvents.js';
 import {
@@ -63,6 +63,29 @@ export class ParameterPanel {
 
     this.render();
     this.bindEvents();
+    this.syncDispersionControl();
+  }
+
+  /** True when the selected method keyword already includes dispersion. */
+  dispersionLocked() {
+    return methodIncludesDispersion(this.state.method);
+  }
+
+  /**
+   * Keep the dispersion <select> consistent with the selected method:
+   * methods that already include dispersion (e.g. B2PLYPD3) must not also
+   * receive EmpiricalDispersion, which would double-count the correction.
+   */
+  syncDispersionControl() {
+    const locked = this.dispersionLocked();
+    if (locked) this.state.dispersion = '';
+    const select = this.container.querySelector('#dispersion-select');
+    if (select) {
+      select.value = this.state.dispersion;
+      select.disabled = locked;
+    }
+    const notice = this.container.querySelector('#dispersion-locked-notice');
+    if (notice) notice.classList.toggle('hidden', !locked);
   }
 
   getSelectedJobName() {
@@ -250,11 +273,15 @@ export class ParameterPanel {
               Dispersion Correction
               <span class="tooltip" data-tooltip="Empirical dispersion models (e.g. D3, D3BJ) to model non-covalent forces" style="cursor: help; opacity: 0.6; font-size: 11px; text-transform: none;">ℹ️</span>
             </label>
-            <select id="dispersion-select" class="form-select">
+            <select id="dispersion-select" class="form-select" ${this.dispersionLocked() ? 'disabled' : ''}>
               ${dispersionCorrections.map(d => `
                 <option value="${d.keyword}" ${this.state.dispersion === d.keyword ? 'selected' : ''}>${d.name}</option>
               `).join('')}
             </select>
+            <div id="dispersion-locked-notice" class="form-notice ${this.dispersionLocked() ? '' : 'hidden'}" style="margin-top: 8px;">
+              <span class="notice-icon">ℹ️</span>
+              <span>This method keyword already includes D3(BJ) dispersion, so the dispersion option is disabled to avoid double counting.</span>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label" style="display: flex; align-items: center; gap: 4px;">
@@ -740,6 +767,7 @@ export class ParameterPanel {
           }
         }
 
+        this.syncDispersionControl();
         this.notifyChange();
       });
     });
@@ -833,6 +861,7 @@ export class ParameterPanel {
     // Re-render to update UI
     this.render();
     this.bindEvents();
+    this.syncDispersionControl();
     this.notifyChange();
   }
 
