@@ -273,6 +273,7 @@ function renderInspector(project, states, options) {
       <li><strong>Drag</strong> a node header to arrange the canvas. Positions are saved in the project.</li>
       <li><strong>Connect</strong> output → input. Cycles and duplicates are rejected.</li>
       <li><strong>Validate</strong> checks the whole project without leaving the canvas.</li>
+      <li><strong>Dashed green</strong> lines are checkpoint hand-offs; solid lines are dependencies.</li>
       <li>Conditional TRUE/FALSE branches are not modelled: a task is blocked until its gates pass.</li>
     </ul>
   `;
@@ -371,7 +372,7 @@ export function renderGraphView({ project, states, zoom, selectedTaskId, selecte
             </div>
           </div>
         </div>
-        <div class="wf-graph-hint">Drag a header to move · drag the right port to connect · click a line to inspect · drag the background or scroll to pan</div>
+        <div class="wf-graph-hint">Drag a header to move · drag the right port to connect · click a line to inspect · dashed green = checkpoint hand-off · drag the background or scroll to pan</div>
       </section>
 
       <aside class="wf-graph-inspector" aria-label="Inspector">
