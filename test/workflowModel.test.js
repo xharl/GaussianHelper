@@ -91,6 +91,7 @@ describe('workflow project validation', () => {
       requireOptimizationComplete: true,
       requireFrequencyRecord: true,
       requireThermochemistry: true,
+      requireFinalEnergy: false,
       expectedImaginaryModes: null,
     });
     config.route.jobType = 'SP';
