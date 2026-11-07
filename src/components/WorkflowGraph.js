@@ -208,6 +208,7 @@ function renderTaskInspector(task, states, project) {
       <button type="button" class="btn btn-secondary btn-sm" data-graph-action="edit-list" data-task-id="${escapeHtml(task.id)}">Open full editor</button>
       <button type="button" class="btn btn-primary btn-sm" data-graph-action="export" data-task-id="${escapeHtml(task.id)}"
         ${state === 'ready' ? '' : 'disabled'} title="${state === 'ready' ? 'Download this ready input' : 'Only a ready task can be exported'}">Download ready input</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-graph-action="duplicate" data-task-id="${escapeHtml(task.id)}">Duplicate</button>
       <button type="button" class="btn btn-ghost btn-sm wf-danger" data-graph-action="delete" data-task-id="${escapeHtml(task.id)}">Delete task</button>
     </div>
     <p class="wf-inspector-note">Gaussian runs externally. Import its log to evaluate these gates; the canvas neither submits nor monitors jobs.</p>
@@ -337,6 +338,8 @@ export function renderGraphView({ project, states, zoom, selectedTaskId, selecte
           <div class="wf-graph-toolbar-group">
             <button type="button" class="btn btn-secondary btn-sm" data-graph-action="toggle-focus"
               title="Hide the molecule and parameter panels to widen the canvas">${focus ? 'Collapse' : 'Expand'}</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-graph-action="import-output"
+              title="Import a Gaussian log to validate a step without leaving the graph">Import log</button>
             <button type="button" class="btn btn-secondary btn-sm" data-graph-action="validate">Validate graph</button>
             <span class="wf-zoom" role="group" aria-label="Zoom">
               <button type="button" class="btn btn-ghost btn-sm" data-graph-zoom="out" title="Zoom out">−</button>

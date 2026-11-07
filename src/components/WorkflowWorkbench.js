@@ -489,6 +489,8 @@ export class WorkflowWorkbench {
     }
     this.project = imported;
     this.pendingOutputs = [];
+    this.selectedTaskId = null;
+    this.selectedEdge = null;
     this.statusMessage = `Loaded project “${imported.name}”. Parsed output summaries are retained; raw log files are not.`;
     this.render();
     return true;
@@ -853,6 +855,10 @@ export class WorkflowWorkbench {
   handleGraphAction(button) {
     const { graphAction: action } = button.dataset;
     if (action === 'validate') return this.validateGraph();
+    if (action === 'import-output') {
+      this.container.querySelector('#workflow-output-input')?.click();
+      return true;
+    }
     if (action === 'toggle-focus') {
       this.graphFocus = !this.graphFocus;
       this._graphFocusChosen = true;
@@ -878,6 +884,7 @@ export class WorkflowWorkbench {
       return true;
     }
     if (action === 'export') return this.downloadTask(button.dataset.taskId);
+    if (action === 'duplicate') return this.duplicateTask(button.dataset.taskId);
     if (action === 'delete') return this.removeTask(button.dataset.taskId);
     if (action === 'remove-edge') return this.disconnectGraphEdge(button.dataset.edgeFrom, button.dataset.edgeTo);
     if (action === 'clear-checkpoint') return this.clearCheckpointHandoff(button.dataset.edgeFrom, button.dataset.edgeTo);
@@ -1135,6 +1142,7 @@ export class WorkflowWorkbench {
     this.project = candidate;
     this.statusMessage = `Duplicated ${source.title}.`;
     this.render();
+    if (this.view === 'graph') this.scrollTaskIntoView(task.id);
     return task;
   }
 

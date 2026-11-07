@@ -9,15 +9,23 @@
 /* Expand: hide the molecule and parameter panels so the canvas gets the width.
    The :has() guard restores them as soon as another output tab is shown, so a
    focus session cannot strand the rest of the app without its panels. */
-#app.workflow-graph-focus:has(#workflow-tab-content:not(.hidden)) .panel-left,
-#app.workflow-graph-focus:has(#workflow-tab-content:not(.hidden)) .panel-center {
-  display: none;
+@media (min-width: 900px) {
+  #app.workflow-graph-focus:has(#workflow-tab-content:not(.hidden)) .panel-left,
+  #app.workflow-graph-focus:has(#workflow-tab-content:not(.hidden)) .panel-center {
+    display: none;
+  }
+
+  #app.workflow-graph-focus:has(#workflow-tab-content:not(.hidden)) .panel-right {
+    flex: 1 1 100%;
+    width: 100%;
+    border-left: 0;
+  }
 }
 
-#app.workflow-graph-focus:has(#workflow-tab-content:not(.hidden)) .panel-right {
-  flex: 1 1 100%;
-  width: 100%;
-  border-left: 0;
+@media (max-width: 600px) {
+  .header-version {
+    display: none;
+  }
 }
 
 .workflow-view-toggle {
@@ -96,6 +104,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .wf-graph-count {
@@ -111,6 +120,7 @@
   padding: 2px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
+  flex-wrap: wrap;
 }
 
 .wf-zoom-value {
@@ -713,5 +723,27 @@
 @container (max-width: 700px) {
   .wf-graph-viewport {
     height: 480px;
+  }
+
+  .wf-graph-toolbar {
+    padding: 6px 8px;
+  }
+
+  .wf-graph-toolbar-group {
+    gap: 4px;
+  }
+
+  .wf-zoom .btn {
+    padding: 2px 6px;
+  }
+
+  .wf-zoom-value {
+    min-width: 34px;
+  }
+}
+
+@media (max-width: 899px) {
+  [data-graph-action="toggle-focus"] {
+    display: none;
   }
 }

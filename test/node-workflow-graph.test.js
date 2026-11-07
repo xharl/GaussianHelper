@@ -293,6 +293,27 @@ describe('Workbench node view', () => {
     expect(sp.graph).toBeDefined();
   });
 
+  it('renders quick edits and edge hand-off controls', () => {
+    const workbench = new WorkflowWorkbench(makeContainer(), () => config());
+    const source = workbench.addCurrentTask();
+    const downstream = workbench.addCurrentTask({ dependencies: [source.id] });
+    workbench.setView('graph');
+    workbench.selectGraphTask(downstream.id);
+    expect(workbench.container.innerHTML).toContain('data-graph-title=');
+    expect(workbench.container.innerHTML).toContain('data-graph-imaginary=');
+    workbench.selectGraphEdge(source.id, downstream.id);
+    expect(workbench.container.innerHTML).toContain('data-graph-action="handoff-checkpoint"');
+    expect(workbench.container.innerHTML).toContain('Geom=AllCheck');
+  });
+
+  it('fits the zoom inside the supported range', () => {
+    const workbench = new WorkflowWorkbench(makeContainer(), () => config());
+    for (let index = 0; index < 8; index += 1) workbench.addCurrentTask();
+    const zoom = workbench.zoomGraph('fit');
+    expect(zoom).toBeGreaterThanOrEqual(0.5);
+    expect(zoom).toBeLessThanOrEqual(1);
+  });
+
   it('zooms within bounds', () => {
     const workbench = new WorkflowWorkbench(makeContainer(), () => config());
     for (let index = 0; index < 20; index += 1) workbench.zoomGraph('in');
