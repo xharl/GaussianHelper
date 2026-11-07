@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GaussianHelper — Node Studio Concept</title>
+<style>
+  :root {
+    --bg: #08090d; --panel: #0f1219; --panel-2: #141924; --input: #0b0e15;
+    --line: rgba(148,163,184,.14); --line-strong: rgba(148,163,184,.25);
+    --text: #e8eaed; --muted: #9ca3af; --faint: #687181;
+    --indigo: #818cf8; --violet: #a78bfa; --green: #34d399; --amber: #fbbf24; --red: #fb7185; --blue: #60a5fa;
+    --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+    --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 13px; overflow: hidden; }
+  button, input, select { font: inherit; }
+  button { color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+  .app { height: 100dvh; display: grid; grid-template-rows: 58px 1fr 29px; min-width: 1080px; }
+  .topbar { display: flex; align-items: center; gap: 18px; padding: 0 18px; background: rgba(12,14,21,.96); border-bottom: 1px solid var(--line); z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 650; white-space: nowrap; }
+  .brand-mark { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 8px; background: linear-gradient(135deg,#6366f1,#8b5cf6); box-shadow: 0 0 20px rgba(99,102,241,.22); font-size: 17px; }
+  .brand span:last-child { color: var(--indigo); }
+  .crumb { color: var(--faint); display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+  .crumb strong { color: var(--muted); font-weight: 500; }
+  .project-name { border: 0; background: transparent; color: var(--text); font-weight: 600; width: 245px; padding: 6px 8px; border-radius: 6px; }
+  .project-name:hover { background: rgba(255,255,255,.04); }
+  .concept { color: #c4b5fd; background: rgba(139,92,246,.11); border: 1px solid rgba(139,92,246,.24); border-radius: 999px; padding: 3px 8px; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+  .top-spacer { flex: 1; }
+  .save-state { color: var(--faint); font-size: 11px; white-space: nowrap; }
+  .btn { border: 1px solid var(--line-strong); background: #141823; border-radius: 7px; padding: 7px 11px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 12px; font-weight: 550; transition: .15s ease; }
+  .btn:hover { border-color: rgba(129,140,248,.55); background: #1a2030; }
+  .btn.primary { background: linear-gradient(135deg,#5b62e9,#7956d8); border-color: transparent; color: white; box-shadow: 0 4px 14px rgba(99,102,241,.18); }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn.danger { color: #fda4af; background: rgba(244,63,94,.06); border-color: rgba(244,63,94,.2); width: 100%; margin-top: 18px; }
+  .workspace { min-height: 0; display: grid; grid-template-columns: 218px minmax(560px,1fr) 304px; }
+  .side { background: var(--panel); min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #303748 transparent; }
+  .library { border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  .side-heading { padding: 17px 15px 12px; display: flex; justify-content: space-between; align-items: center; }
+  .side-heading h2 { font-size: 12px; letter-spacing: .02em; }
+  .count { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+  .search { margin: 0 13px 13px; position: relative; }
+  .search input { width: 100%; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 8px 9px 8px 29px; font-size: 11px; }
+  .search span { position: absolute; left: 10px; top: 7px; color: var(--faint); }
+  .library-scroll { overflow-y: auto; padding: 0 9px 16px; }
+  .library-group { margin: 12px 5px 6px; color: var(--faint); font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .library-item { width: 100%; border: 1px solid transparent; background: transparent; border-radius: 8px; display: grid; grid-template-columns: 30px 1fr 18px; gap: 8px; align-items: center; padding: 8px 7px; text-align: left; margin-bottom: 2px; }
+  .library-item:hover { background: rgba(129,140,248,.07); border-color: rgba(129,140,248,.16); }
+  .library-item:hover .add { color: var(--indigo); }
+  .block-icon { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 7px; background: rgba(129,140,248,.09); color: #a5b4fc; font-family: var(--mono); font-size: 13px; }
+  .block-icon.logic { background: rgba(251,191,36,.09); color: var(--amber); }
+  .block-icon.data { background: rgba(52,211,153,.08); color: var(--green); }
+  .library-copy strong { display: block; font-size: 12px; font-weight: 550; }
+  .library-copy small { display: block; margin-top: 2px; color: #7f8999; font-size: 10px; }
+  .add { color: #525b6b; font-size: 16px; text-align: center; }
+  .library-tip { margin: auto 13px 13px; padding: 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--faint); font-size: 10px; line-height: 1.55; background: rgba(255,255,255,.015); }
+  .library-tip b { color: var(--muted); font-weight: 550; }
+  .canvas-column { min-width: 0; min-height: 0; display: grid; grid-template-rows: 45px 1fr; background: #090b11; }
+  .canvas-toolbar { display: flex; align-items: center; gap: 6px; padding: 0 12px; border-bottom: 1px solid var(--line); background: #0d1017; }
+  .view-tabs { display: flex; gap: 2px; background: #090c12; padding: 3px; border: 1px solid var(--line); border-radius: 7px; margin-right: 8px; }
+  .view-tab { border: 0; background: transparent; color: var(--faint); border-radius: 5px; padding: 4px 10px; font-size: 10px; }
+  .view-tab.active { background: #202637; color: var(--text); box-shadow: 0 1px 3px #0005; }
+  .tool { width: 27px; height: 27px; border: 1px solid transparent; background: transparent; border-radius: 6px; color: var(--muted); display: grid; place-items: center; }
+  .tool:hover, .tool.active { background: rgba(129,140,248,.1); border-color: rgba(129,140,248,.18); color: #c7d2fe; }
+  .tool-sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+  .toolbar-hint { margin-left: auto; color: var(--faint); font-size: 10px; }
+  .canvas-viewport { position: relative; overflow: auto; min-height: 0; background-color: #090b11; background-image: radial-gradient(circle, rgba(148,163,184,.18) 1px, transparent 1px); background-size: 22px 22px; }
+  .stage { width: 900px; height: 700px; position: relative; transform-origin: 0 0; margin: 20px; }
+  .edges { position: absolute; inset: 0; width: 900px; height: 700px; overflow: visible; z-index: 1; }
+  .edge-line { fill: none; stroke: #454e61; stroke-width: 1.6; marker-end: url(#arrow-default); }
+  .edge-line.passed { stroke: #2d9c78; marker-end: url(#arrow-passed); }
+  .edge-line.ready { stroke: #747ef0; marker-end: url(#arrow-ready); }
+  .edge-line.true { stroke: #35b589; marker-end: url(#arrow-true); }
+  .edge-line.false { stroke: #b7893d; marker-end: url(#arrow-false); stroke-dasharray: 5 4; }
+  .edge-line.selected { stroke: #c4b5fd; stroke-width: 2.6; filter: drop-shadow(0 0 4px #8b5cf680); }
+  .edge-hit { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer; }
+  .edge-label { cursor: pointer; }
+  .edge-label rect { fill: #111621; stroke: #384154; stroke-width: 1; rx: 5; }
+  .edge-label text { font-family: var(--mono); font-size: 10px; fill: #bac3d2; text-anchor: middle; dominant-baseline: middle; }
+  .edge-label.true rect { fill: #0d211c; stroke: #246d56; }
+  .edge-label.true text { fill: #75d9b7; }
+  .edge-label.false rect { fill: #251d11; stroke: #74572c; }
+  .edge-label.false text { fill: #e3bc75; }
+  .flow-node { position: absolute; width: 172px; height: 126px; z-index: 2; border: 1px solid #313949; border-radius: 10px; background: linear-gradient(160deg,#161b26,#11151e); box-shadow: 0 7px 20px rgba(0,0,0,.25); cursor: grab; user-select: none; transition: border-color .12s, box-shadow .12s; }
+  .flow-node:hover { border-color: #515d74; }
+  .flow-node.selected { border-color: #8b93fb; box-shadow: 0 0 0 2px rgba(129,140,248,.17),0 8px 26px #0007; }
+  .flow-node.connecting { border-color: #c4b5fd; box-shadow: 0 0 0 3px rgba(196,181,253,.2); }
+  .flow-node:active { cursor: grabbing; }
+  .node-accent { position: absolute; left: -1px; top: 14px; bottom: 14px; width: 2px; border-radius: 2px; background: #64748b; }
+  .flow-node.passed .node-accent { background: var(--green); }
+  .flow-node.ready .node-accent { background: var(--indigo); }
+  .flow-node.blocked .node-accent { background: #4b5563; }
+  .flow-node.decision { border-color: rgba(251,191,36,.32); background: linear-gradient(155deg,#201c18,#14151b); }
+  .flow-node.decision .node-accent { background: var(--amber); }
+  .node-head { display: flex; align-items: center; gap: 7px; padding: 10px 10px 0; }
+  .node-icon { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; background: rgba(129,140,248,.09); color: #a5b4fc; font-family: var(--mono); font-size: 12px; flex: 0 0 auto; }
+  .decision .node-icon { background: rgba(251,191,36,.1); color: var(--amber); }
+  .node-type { color: var(--faint); text-transform: uppercase; letter-spacing: .08em; font-size: 8px; font-weight: 700; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #64748b; margin-left: auto; box-shadow: 0 0 0 3px rgba(100,116,139,.08); }
+  .passed .status-dot { background: var(--green); box-shadow: 0 0 0 3px rgba(52,211,153,.09); }
+  .ready .status-dot { background: var(--indigo); box-shadow: 0 0 0 3px rgba(129,140,248,.12); }
+  .node-body { padding: 8px 11px; }
+  .node-title { font-size: 12px; font-weight: 600; line-height: 1.3; }
+  .node-detail { font-family: var(--mono); color: #a3adbd; font-size: 9px; line-height: 1.4; margin-top: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .branch-port { position: absolute; bottom: -7px; width: 12px; height: 12px; border-radius: 50%; background: #121722; z-index: 4; border: 2px solid #64748b; }
+  .branch-port.true { left: 49px; border-color: var(--green); }
+  .branch-port.false { right: 49px; border-color: var(--amber); }
+  .node-foot { position: absolute; bottom: 9px; left: 11px; right: 11px; display: flex; justify-content: space-between; align-items: center; font-size: 8.5px; color: #7f8999; }
+  .node-foot span:first-child { display: flex; align-items: center; gap: 4px; }
+  .decision-branches { display: flex; gap: 5px; }
+  .decision-branches i { font-style: normal; border: 1px solid #4c432b; color: #d6b66d; border-radius: 4px; padding: 1px 4px; }
+  .port { position: absolute; top: 55px; width: 12px; height: 12px; border-radius: 50%; background: #121722; border: 2px solid #64748b; z-index: 4; cursor: crosshair; transition: .12s; }
+  .port:hover { border-color: #c4b5fd; background: #8b5cf6; transform: scale(1.25); }
+  .port.input { left: -7px; }
+  .port.output { right: -7px; }
+  .canvas-badge { position: sticky; left: 14px; top: 12px; float: left; z-index: 3; border: 1px solid var(--line); background: rgba(13,16,23,.88); backdrop-filter: blur(8px); border-radius: 6px; padding: 5px 8px; color: var(--faint); font-size: 9px; pointer-events: none; }
+  .zoom-control { position: sticky; float: right; right: 14px; top: calc(100% - 48px); margin-top: -48px; z-index: 4; display: flex; align-items: center; background: rgba(15,18,25,.94); border: 1px solid var(--line-strong); border-radius: 7px; overflow: hidden; box-shadow: 0 5px 16px #0005; }
+  .zoom-control button { width: 29px; height: 28px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--muted); }
+  .zoom-control button:hover { background: #202637; }
+  .zoom-control button:last-child { border: 0; border-left: 1px solid var(--line); width: 38px; font-size: 9px; }
+  .zoom-value { font-family: var(--mono); font-size: 9px; min-width: 39px; text-align: center; color: var(--faint); }
+  .inspector { border-left: 1px solid var(--line); }
+  .inspector-head { padding: 16px 16px 13px; border-bottom: 1px solid var(--line); }
+  .eyebrow { color: var(--indigo); font-size: 9px; letter-spacing: .11em; text-transform: uppercase; font-weight: 700; margin-bottom: 7px; }
+  .inspector-title-row { display: flex; align-items: center; gap: 8px; }
+  .inspector-head h2 { font-size: 15px; font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; border: 1px solid var(--line-strong); padding: 3px 7px; color: var(--muted); font-size: 9px; white-space: nowrap; }
+  .pill.green { color: #6ee7b7; border-color: rgba(52,211,153,.23); background: rgba(52,211,153,.05); }
+  .pill.amber { color: #fcd34d; border-color: rgba(251,191,36,.25); background: rgba(251,191,36,.05); }
+  .inspector-body { padding: 15px 16px 24px; }
+  .section { margin-bottom: 19px; }
+  .section-title { display: flex; align-items: center; justify-content: space-between; color: #c3c9d4; font-size: 10px; font-weight: 600; margin-bottom: 9px; }
+  .section-title span { color: var(--faint); font-weight: 400; font-size: 9px; }
+  .description { color: var(--muted); font-size: 10px; line-height: 1.55; margin-bottom: 16px; }
+  .field { display: block; margin-bottom: 10px; }
+  .field > span { display: block; color: var(--faint); font-size: 9px; margin-bottom: 5px; }
+  .field input, .field select { width: 100%; border: 1px solid var(--line-strong); background: var(--input); color: #cdd3df; border-radius: 6px; padding: 7px 8px; font-size: 10px; }
+  .field input.mono, .field select.mono { font-family: var(--mono); font-size: 9px; }
+  .rule { display: grid; grid-template-columns: 1fr 56px 58px; gap: 5px; }
+  .rule select, .rule input { min-width: 0; width: 100%; background: var(--input); border: 1px solid rgba(251,191,36,.24); color: #e7d8b5; border-radius: 6px; padding: 7px 5px; font-family: var(--mono); font-size: 8px; }
+  .expression { margin-top: 7px; padding: 7px 8px; background: #0a0d13; border: 1px solid var(--line); border-radius: 6px; color: #b7c0d0; font-family: var(--mono); font-size: 8px; overflow-wrap: anywhere; }
+  .branch { display: grid; grid-template-columns: 35px 1fr; gap: 8px; align-items: start; border: 1px solid var(--line); border-radius: 7px; padding: 8px; margin-bottom: 6px; }
+  .branch-label { font-family: var(--mono); font-size: 8px; font-weight: 700; border-radius: 4px; padding: 3px 2px; text-align: center; }
+  .branch.true .branch-label { color: #6ee7b7; background: rgba(52,211,153,.09); }
+  .branch.false .branch-label { color: #fcd34d; background: rgba(251,191,36,.09); }
+  .branch strong { display: block; font-size: 10px; font-weight: 550; }
+  .branch small { display: block; color: var(--faint); font-size: 8px; margin-top: 3px; line-height: 1.4; }
+  .evidence { background: rgba(52,211,153,.035); border: 1px solid rgba(52,211,153,.15); border-radius: 8px; padding: 9px; }
+  .evidence-row { display: flex; align-items: center; gap: 7px; color: #a9b7b2; font-size: 9px; margin: 5px 0; }
+  .check { width: 14px; height: 14px; display: grid; place-items: center; border-radius: 50%; background: rgba(52,211,153,.12); color: var(--green); font-size: 8px; flex: 0 0 auto; }
+  .evidence-value { margin-left: auto; font-family: var(--mono); color: #75d9b7; font-size: 8px; }
+  .toggle-row { display: flex; gap: 9px; align-items: flex-start; }
+  .toggle { width: 29px; height: 16px; border: 0; border-radius: 999px; background: #4f46b8; padding: 2px; flex: 0 0 auto; }
+  .toggle::after { content: ""; display: block; width: 12px; height: 12px; border-radius: 50%; background: white; transform: translateX(13px); transition: .15s; }
+  .toggle.off { background: #363d4b; }
+  .toggle.off::after { transform: translateX(0); }
+  .toggle-copy strong { display: block; font-size: 9px; font-weight: 550; }
+  .toggle-copy small { display: block; color: var(--faint); font-size: 8px; line-height: 1.45; margin-top: 3px; }
+  .route-box { background: #0a0d13; border: 1px solid var(--line); border-radius: 7px; padding: 9px; color: #c4b5fd; font-family: var(--mono); font-size: 9px; line-height: 1.6; overflow-wrap: anywhere; }
+  .dependency { display: flex; align-items: center; gap: 7px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 9px; }
+  .dependency:last-child { border: 0; }
+  .dependency small { margin-left: auto; color: var(--faint); }
+  .next-action { margin: 0 13px 13px; padding: 12px; border: 1px solid rgba(129,140,248,.22); border-radius: 9px; background: linear-gradient(145deg,rgba(99,102,241,.09),rgba(139,92,246,.025)); }
+  .next-action .eyebrow { margin-bottom: 5px; }
+  .next-action strong { display: block; font-size: 11px; }
+  .next-action p { color: var(--faint); font-size: 9px; line-height: 1.5; margin: 5px 0 9px; }
+  .next-action .btn { width: 100%; font-size: 10px; padding: 6px; }
+  .statusbar { display: flex; align-items: center; gap: 16px; padding: 0 12px; border-top: 1px solid var(--line); background: #0c0f16; color: var(--faint); font-size: 9px; }
+  .statusbar .ok { color: #75d9b7; }
+  .statusbar .right { margin-left: auto; display: flex; gap: 15px; }
+  .legend { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .legend.ready i { background: var(--indigo); }
+  .legend.blocked i { background: #4b5563; }
+  .toast-stack { position: fixed; right: 320px; bottom: 45px; z-index: 30; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .toast { width: 320px; background: rgba(20,25,36,.98); border: 1px solid #3b4558; border-left: 3px solid var(--indigo); border-radius: 8px; padding: 11px 13px; box-shadow: 0 12px 35px #0009; animation: toast-in .2s ease; }
+  .toast.success { border-left-color: var(--green); }
+  .toast.warning { border-left-color: var(--amber); }
+  .toast strong { display: block; font-size: 11px; margin-bottom: 3px; }
+  .toast span { color: var(--muted); font-size: 9px; line-height: 1.45; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+  .modal-backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(2,4,8,.72); backdrop-filter: blur(4px); }
+  .modal-backdrop.hidden { display: none; }
+  .modal { width: 560px; max-height: 80vh; overflow: auto; background: #11151e; border: 1px solid #343e50; border-radius: 12px; box-shadow: 0 24px 80px #000b; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+  .modal-head h2 { font-size: 15px; }
+  .modal-body { padding: 18px; }
+  .modal-note { padding: 10px; border: 1px solid rgba(129,140,248,.18); background: rgba(129,140,248,.05); border-radius: 7px; color: #b6bdd0; font-size: 10px; line-height: 1.55; margin-bottom: 13px; }
+  .ready-file { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 11px; margin-top: 8px; }
+  .file-icon { width: 32px; height: 32px; display: grid; place-items: center; background: rgba(129,140,248,.09); border-radius: 6px; color: var(--indigo); font-family: var(--mono); }
+  .ready-file strong { display: block; font-size: 11px; }
+  .ready-file small { color: var(--faint); font-family: var(--mono); font-size: 9px; }
+  .ready-file .pill { margin-left: auto; }
+  .hidden { display: none !important; }
+  @media (max-width: 1220px) {
+    .workspace { grid-template-columns: 194px minmax(540px,1fr) 278px; }
+    .project-name { width: 190px; }
+    .save-state { display: none; }
+    .library-copy small { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">⚛</span><div>Gaussian<span>Helper</span></div></div>
+    <div class="crumb"><strong>Project workbench</strong><span>/</span></div>
+    <input class="project-name" id="project-name" value="Diels–Alder · TS verification" aria-label="Project name">
+    <span class="concept">Interactive concept</span>
+    <div class="top-spacer"></div>
+    <span class="save-state" id="save-state">Local concept · session only</span>
+    <button class="btn" id="validate"><span>✓</span> Validate flow</button>
+    <button class="btn primary" id="export"><span>⇩</span> Export ready</button>
+  </header>
+
+  <main class="workspace">
+    <aside class="side library">
+      <div class="side-heading"><h2>Computational blocks</h2><span class="count" id="library-count">10</span></div>
+      <div class="search"><span>⌕</span><input id="library-search" placeholder="Find a block…" aria-label="Find a computational block"></div>
+      <div class="library-scroll" id="library-list"></div>
+      <div class="library-tip"><b>Build the graph</b><br>Click a block to add it. Drag cards to arrange. Connect <b>output ○ → input ○</b> to declare a dependency.</div>
+    </aside>
+
+    <section class="canvas-column">
+      <div class="canvas-toolbar">
+        <div class="view-tabs" aria-label="Workbench view">
+          <button class="view-tab active" data-view="design">Design</button>
+          <button class="view-tab" data-view="runs">Runs <span>3</span></button>
+          <button class="view-tab" data-view="files">Files</button>
+        </div>
+        <button class="tool active" id="select-tool" title="Select and move blocks">↖</button>
+        <button class="tool" id="connect-tool" title="Connect from the selected block">⌁</button>
+        <span class="tool-sep"></span>
+        <button class="tool" id="auto-layout" title="Restore example layout">⌗</button>
+        <button class="tool" id="delete-selected" title="Delete selected block">⌫</button>
+        <span class="toolbar-hint" id="toolbar-hint">Drag to arrange · scroll to pan</span>
+      </div>
+      <div class="canvas-viewport" id="viewport">
+        <div class="canvas-badge">FLOW / TRANSITION-STATE VERIFICATION</div>
+        <div class="stage" id="stage">
+          <svg class="edges" id="edges" viewBox="0 0 900 700" aria-label="Workflow dependencies">
+            <defs>
+              <marker id="arrow-default" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#596478"/></marker>
+              <marker id="arrow-passed" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#2d9c78"/></marker>
+              <marker id="arrow-ready" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#747ef0"/></marker>
+              <marker id="arrow-true" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#35b589"/></marker>
+              <marker id="arrow-false" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#b7893d"/></marker>
+            </defs>
+            <g id="edge-content"></g>
+          </svg>
+          <div id="nodes"></div>
+        </div>
+        <div class="zoom-control">
+          <button id="zoom-out" aria-label="Zoom out">−</button><span class="zoom-value" id="zoom-value">100%</span>
+          <button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-fit">Fit</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side inspector" id="inspector"></aside>
+  </main>
+
+  <footer class="statusbar">
+    <span class="ok" id="flow-status">● Example graph loaded</span><span id="graph-count">7 blocks · 6 dependencies</span>
+    <div class="right">
+      <span class="legend"><i></i> 3 passed</span><span class="legend ready"><i></i> 1 ready</span><span class="legend blocked"><i></i> 3 waiting / blocked</span>
+      <span>Gaussian runs externally</span>
+    </div>
+  </footer>
+</div>
+<div class="toast-stack" id="toasts" aria-live="polite"></div>
+<div class="modal-backdrop hidden" id="export-modal">
+  <section class="modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
+    <div class="modal-head"><h2 id="export-title">Ready calculation inputs</h2><button class="tool" id="close-export" aria-label="Close">✕</button></div>
+    <div class="modal-body">
+      <div class="modal-note">This is an interaction mockup. A production version would reuse the existing Workbench exporter and only release tasks whose prerequisites and conditional gates pass. Gaussian execution remains external.</div>
+      <div class="ready-file"><span class="file-icon">GJF</span><div><strong>IRC path following</strong><small>ts-irc.gjf · Geom=AllCheck Guess=Read</small></div><span class="pill green">Ready</span></div>
+      <div class="ready-file" style="opacity:.55"><span class="file-icon">GJF</span><div><strong>High-level single point</strong><small>ts-sp.gjf · waiting for IRC</small></div><span class="pill">Blocked</span></div>
+      <button class="btn primary" style="width:100%;margin-top:16px" id="mock-download">Preview export manifest</button>
+    </div>
+  </section>
+</div>
+
+<script>
+const icons = { structure: '⌬', optimization: '↘', frequency: '∿', decision: '◇', irc: '⇄', energy: 'E', review: '!', nbo: 'N', coordinates: 'XYZ', analysis: 'Σ' };
+const palette = [
+  { group: 'Structure & data', type: 'structure', title: 'Molecule input', subtitle: 'SMILES, XYZ, MOL or checkpoint', icon: '⌬', iconClass: 'data', detail: 'C₆H₆ + C₄H₆ · 0 1' },
+  { group: 'Structure & data', type: 'coordinates', title: 'Coordinates', subtitle: 'Geometry transformation', icon: 'XYZ', iconClass: 'data', detail: 'XYZ → Gaussian coordinates' },
+  { group: 'Calculations', type: 'optimization', title: 'Geometry optimization', subtitle: 'Minima and transition states', icon: '↘', detail: 'Opt=(TS,CalcFC) · DFT' },
+  { group: 'Calculations', type: 'frequency', title: 'Frequency analysis', subtitle: 'Vibrational modes and thermochemistry', icon: '∿', detail: 'Freq · Read checkpoint' },
+  { group: 'Calculations', type: 'irc', title: 'IRC path following', subtitle: 'Follow a transition-state path', icon: '⇄', detail: 'IRC=(CalcFC,MaxPoints=20)' },
+  { group: 'Calculations', type: 'energy', title: 'Single-point energy', subtitle: 'Refine the electronic energy', icon: 'E', detail: 'SP · high-level theory' },
+  { group: 'Calculations', type: 'nbo', title: 'Population analysis', subtitle: 'Charges and orbital populations', icon: 'N', detail: 'Pop=NBORead' },
+  { group: 'Logic & recovery', type: 'decision', title: 'Output condition', subtitle: 'Branch on parsed evidence', icon: '◇', iconClass: 'logic', detail: 'Nᵢₘₐg = 1' },
+  { group: 'Logic & recovery', type: 'review', title: 'Review & refine', subtitle: 'Create a corrected new attempt', icon: '!', iconClass: 'logic', detail: 'Manual review · new attempt' },
+  { group: 'Analysis', type: 'analysis', title: 'Energy comparison', subtitle: 'Relative energies and profiles', icon: 'Σ', iconClass: 'data', detail: 'ΔE / ΔG · kcal mol⁻¹' }
+];
+const initialNodes = [
+  { id:'structure', type:'structure', kind:'Structure input', title:'Reactant complex', detail:'C₅H₆ + C₃H₃N · 0 1', status:'passed', x:32,y:90, artifact:'reactants.xyz', route:'Charge 0 · Multiplicity 1' },
+  { id:'opt', type:'optimization', kind:'Gaussian calculation', title:'TS optimization', detail:'B3LYP/6-31G(d) · Opt=(TS,CalcFC)', status:'passed', x:242,y:90, artifact:'ts-opt.chk', route:'#p B3LYP/6-31G(d) Opt=(TS,CalcFC,MaxCycles=100)' },
+  { id:'freq', type:'frequency', kind:'Gaussian calculation', title:'Frequency analysis', detail:'B3LYP/6-31G(d) · Freq', status:'passed', x:452,y:90, artifact:'ts-freq.log', route:'#p B3LYP/6-31G(d) Freq Geom=AllCheck Guess=Read' },
+  { id:'gate', type:'decision', kind:'Output condition', title:'One imaginary mode?', detail:'Nᵢₘₐg = 1', status:'passed', x:662,y:90, artifact:'3 gates passed', route:'frequencies.imaginaryCount == 1', metric:'frequencies.imaginaryCount', operator:'=', value:'1' },
+  { id:'irc', type:'irc', kind:'Gaussian calculation', title:'IRC path following', detail:'IRC=(CalcFC,MaxPoints=20)', status:'ready', x:452,y:330, artifact:'ts-irc.gjf', route:'#p B3LYP/6-31G(d) IRC=(CalcFC,MaxPoints=20) Geom=AllCheck Guess=Read' },
+  { id:'sp', type:'energy', kind:'Gaussian calculation', title:'High-level single point', detail:'ωB97X-D/def2-TZVP · SP', status:'blocked', x:452,y:540, artifact:'ts-sp.gjf', route:'#p wB97XD/def2TZVP SP Geom=AllCheck Guess=Read' },
+  { id:'review', type:'review', kind:'Recovery branch', title:'Review & refine', detail:'New attempt · no automatic loop', status:'blocked', x:662,y:330, artifact:'manual review', route:'Inspect mode → revise guess → create a new optimization attempt' }
+];
+let nodes = structuredClone(initialNodes);
+let edges = [
+  { id:'e1',source:'structure',target:'opt',class:'passed',label:'XYZ' },
+  { id:'e2',source:'opt',target:'freq',class:'passed',label:'CHK' },
+  { id:'e3',source:'freq',target:'gate',class:'passed',label:'LOG' },
+  { id:'e4',source:'gate',target:'irc',class:'true',label:'YES',condition:'true',route:'branch' },
+  { id:'e5',source:'gate',target:'review',class:'false',label:'NO',condition:'false',route:'branch' },
+  { id:'e6',source:'irc',target:'sp',class:'ready',label:'on pass · CHK',condition:'passed',route:'vertical' }
+];
+let selected = { kind:'node', id:'gate' };
+let connectingFrom = null;
+let zoom = 1;
+let blockUnknown = true;
+let counter = 0;
+const $ = s => document.querySelector(s);
+const nodeById = id => nodes.find(n => n.id === id);
+const statusLabel = s => ({passed:'Passed',ready:'Ready',blocked:'Blocked',draft:'Draft'})[s] || s;
+
+function renderLibrary(filter='') {
+  const query = filter.trim().toLowerCase();
+  const filtered = palette.filter(b => `${b.title} ${b.subtitle} ${b.type}`.toLowerCase().includes(query));
+  let html = ''; let lastGroup = '';
+  for (const block of filtered) {
+    if (block.group !== lastGroup) { html += `<div class="library-group">${block.group}</div>`; lastGroup = block.group; }
+    html += `<button class="library-item" data-add="${block.type}" title="Add ${block.title}"><span class="block-icon ${block.iconClass||''}">${block.icon}</span><span class="library-copy"><strong>${block.title}</strong><small>${block.subtitle}</small></span><span class="add">+</span></button>`;
+  }
+  $('#library-list').innerHTML = html || '<div class="description" style="padding:12px">No matching blocks.</div>';
+  $('#library-count').textContent = filtered.length;
+}
+function nodeTemplate(n) {
+  const isDecision = n.type === 'decision';
+  return `<article class="flow-node ${n.status} ${isDecision?'decision':''} ${selected.kind==='node'&&selected.id===n.id?'selected':''} ${connectingFrom===n.id?'connecting':''}" data-node="${n.id}" style="left:${n.x}px;top:${n.y}px" tabindex="0" aria-label="${n.title}, ${statusLabel(n.status)}">
+    <span class="node-accent"></span><span class="port input" data-port="input" data-node="${n.id}" title="Input dependency"></span><span class="port output" data-port="output" data-node="${n.id}" title="Output: click, then choose another block's input"></span>${isDecision?'<span class="branch-port true" title="TRUE branch"></span><span class="branch-port false" title="FALSE branch"></span>':''}
+    <div class="node-head"><span class="node-icon">${icons[n.type]||'□'}</span><span class="node-type">${n.kind}</span><span class="status-dot" title="${statusLabel(n.status)}"></span></div>
+    <div class="node-body"><div class="node-title">${escapeHtml(n.title)}</div><div class="node-detail">${escapeHtml(n.detail)}</div></div>
+    <div class="node-foot">${isDecision?'<div class="decision-branches"><i>YES</i><i>NO</i></div>':`<span>${n.status==='passed'?'✓ '+statusLabel(n.status):n.status==='ready'?'→ Ready to export':'○ '+statusLabel(n.status)}</span>`}<span>${escapeHtml(n.artifact)}</span></div>
+  </article>`;
+}
+function renderNodes() { $('#nodes').innerHTML = nodes.map(nodeTemplate).join(''); }
+function anchor(n, side, offset=0) {
+  const w=172,h=126;
+  if (side==='bottom') return {x:n.x+w/2+offset,y:n.y+h};
+  if (side==='top') return {x:n.x+w/2+offset,y:n.y};
+  if (side==='left') return {x:n.x,y:n.y+61};
+  return {x:n.x+w,y:n.y+61};
+}
+function edgeGeometry(e) {
+  const s=nodeById(e.source),t=nodeById(e.target); if(!s||!t) return null;
+  let a,b;
+  if(e.route==='branch') { const offset=e.condition==='true'?-31:e.condition==='false'?31:0; a=anchor(s,'bottom',offset); b=anchor(t,'top'); }
+  else if(e.route==='vertical') { a=anchor(s,'bottom'); b=anchor(t,'top'); }
+  else if(t.x>=s.x) { a=anchor(s,'right'); b=anchor(t,'left'); }
+  else { a=anchor(s,'left'); b=anchor(t,'right'); }
+  const dx=Math.abs(b.x-a.x),dy=Math.abs(b.y-a.y);
+  let c1,c2;
+  if(['branch','vertical'].includes(e.route)) { const bend=Math.max(45,dy*.48); c1={x:a.x,y:a.y+bend};c2={x:b.x,y:b.y-bend}; }
+  else { const bend=Math.max(38,dx*.48); const sign=b.x>=a.x?1:-1;c1={x:a.x+bend*sign,y:a.y};c2={x:b.x-bend*sign,y:b.y}; }
+  const d=`M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`;
+  const mid={x:(a.x+3*c1.x+3*c2.x+b.x)/8,y:(a.y+3*c1.y+3*c2.y+b.y)/8};
+  return {d,mid};
+}
+function renderEdges() {
+  $('#edge-content').innerHTML = edges.map(e=>{
+    const g=edgeGeometry(e); if(!g)return '';
+    const label=e.label||'on pass',w=Math.max(36,label.length*6.1+14);
+    const selectedClass=selected.kind==='edge'&&selected.id===e.id?'selected':'';
+    return `<g data-edge="${e.id}"><path class="edge-hit" data-edge-hit="${e.id}" d="${g.d}"/><path class="edge-line ${e.class} ${selectedClass}" d="${g.d}"/><g class="edge-label ${e.class}" data-edge-label="${e.id}" transform="translate(${g.mid.x},${g.mid.y})"><rect x="${-w/2}" y="-9" width="${w}" height="18"/><text y=".5">${escapeHtml(label)}</text></g></g>`;
+  }).join('');
+  $('#graph-count').textContent=`${nodes.length} blocks · ${edges.length} dependencies`;
+  const counts=nodes.reduce((a,n)=>(a[n.status]=(a[n.status]||0)+1,a),{});
+  $('.statusbar .right').innerHTML=`<span class="legend"><i></i> ${counts.passed||0} passed</span><span class="legend ready"><i></i> ${counts.ready||0} ready</span><span class="legend blocked"><i></i> ${(counts.blocked||0)+(counts.draft||0)} waiting / draft</span><span>Gaussian runs externally</span>`;
+}
+function selectNode(id) { selected={kind:'node',id}; connectingFrom=null; renderNodes();renderEdges();renderInspector(); }
+function selectEdge(id) { selected={kind:'edge',id};connectingFrom=null;renderNodes();renderEdges();renderInspector(); }
+function incoming(id){return edges.filter(e=>e.target===id);}
+function outgoing(id){return edges.filter(e=>e.source===id);}
+function renderInspector() {
+  const el=$('#inspector');
+  if(selected.kind==='edge') {
+    const e=edges.find(x=>x.id===selected.id); if(!e){selected={kind:'node',id:'gate'};return renderInspector();}
+    const s=nodeById(e.source),t=nodeById(e.target);
+    el.innerHTML=`<div class="inspector-head"><div class="eyebrow">Dependency connection</div><div class="inspector-title-row"><h2>${s.title} → ${t.title}</h2></div></div><div class="inspector-body">
+      <p class="description">A connection carries execution order and, when requested, checkpoint artifacts. Conditional branches release only when their rule matches the parsed output.</p>
+      <div class="section"><div class="section-title">Release downstream</div><label class="field"><span>Condition on this connection</span><select class="mono" id="edge-condition">${[['passed','When source passes'],['true','TRUE branch'],['false','FALSE branch'],['failed','When source fails'],['always','Always (data only)']].map(([v,l])=>`<option value="${v}" ${e.condition===v||(!e.condition&&v==='passed')?'selected':''}>${l}</option>`).join('')}</select></label><div class="expression">${s.id}.output → ${t.id}.dependencies</div></div>
+      <div class="section"><div class="section-title">Artifact binding</div><div class="toggle-row"><button class="toggle ${/chk/i.test(e.label)?'':'off'}" id="edge-checkpoint" aria-label="Toggle checkpoint binding"></button><div class="toggle-copy"><strong>Pass checkpoint file</strong><small>Bind the source .chk as %OldChk in the downstream Gaussian input.</small></div></div></div>
+      <div class="section"><div class="section-title">Endpoints</div><div class="dependency"><span class="check">↑</span>${s.title}<small>${s.id}</small></div><div class="dependency"><span class="check">↓</span>${t.title}<small>${t.id}</small></div></div>
+      <button class="btn danger" id="delete-edge">Delete connection</button></div>`;
+    return;
+  }
+  const n=nodeById(selected.id)||nodes[0]; if(!n){el.innerHTML='';return;}
+  if(n.type==='decision') {
+    el.innerHTML=`<div class="inspector-head"><div class="eyebrow">Logic block</div><div class="inspector-title-row"><h2>${escapeHtml(n.title)}</h2><span class="pill green">Evidence linked</span></div></div><div class="inspector-body">
+      <p class="description">Branch from evidence parsed in the upstream Gaussian log. Unknown or missing evidence never counts as a match.</p>
+      <div class="section"><div class="section-title">When output arrives <span>rule 01</span></div><div class="rule"><select id="gate-metric" aria-label="Output metric"><option value="frequencies.imaginaryCount">imaginaryCount</option><option value="optimization.status">optimization.status</option><option value="scf.status">scf.status</option></select><select id="gate-operator" aria-label="Operator"><option>=</option><option>≠</option><option>&gt;</option><option>&lt;</option></select><input id="gate-value" value="${escapeHtml(n.value||'1')}" aria-label="Expected value"></div><div class="expression" id="gate-expression">${n.metric} ${n.operator} ${n.value}</div></div>
+      <div class="section"><div class="section-title">Branches <span>2 outgoing</span></div><div class="branch true"><span class="branch-label">YES</span><div><strong>IRC path following</strong><small>Release when the expected TS signature is present.</small></div></div><div class="branch false"><span class="branch-label">NO</span><div><strong>Review &amp; refine</strong><small>Keep the main path blocked; create a separate recovery attempt.</small></div></div></div>
+      <div class="section"><div class="section-title">Upstream evidence <span>ts-freq.log</span></div><div class="evidence"><div class="evidence-row"><span class="check">✓</span>Normal termination<span class="evidence-value">found</span></div><div class="evidence-row"><span class="check">✓</span>Optimization converged<span class="evidence-value">found</span></div><div class="evidence-row"><span class="check">✓</span>Imaginary modes<span class="evidence-value">1 · −542.31 cm⁻¹</span></div></div></div>
+      <div class="section"><div class="toggle-row"><button class="toggle ${blockUnknown?'':'off'}" id="unknown-toggle" aria-label="Toggle blocking unknown evidence"></button><div class="toggle-copy"><strong>Block on unknown evidence</strong><small>A missing parser result must not silently unlock either branch.</small></div></div></div>
+      <button class="btn danger" data-delete-node="${n.id}">Delete logic block</button></div>`;
+  } else {
+    const deps=incoming(n.id);
+    el.innerHTML=`<div class="inspector-head"><div class="eyebrow">${escapeHtml(n.kind)}</div><div class="inspector-title-row"><h2 id="inspector-node-title">${escapeHtml(n.title)}</h2><span class="pill ${n.status==='passed'?'green':''}">${statusLabel(n.status)}</span></div></div><div class="inspector-body">
+      <p class="description">A snapshot of one computational step. Editing a real task would invalidate this result and every downstream dependent.</p>
+      <div class="section"><label class="field"><span>Block name</span><input id="node-title-input" value="${escapeHtml(n.title)}" maxlength="80"></label><label class="field"><span>Route / operation</span><input class="mono" id="node-route-input" value="${escapeHtml(n.route)}"></label></div>
+      <div class="section"><div class="section-title">Dependencies <span>${deps.length} incoming</span></div>${deps.length?deps.map(e=>{const s=nodeById(e.source);return `<div class="dependency"><span class="check">${e.condition==='true'?'T':e.condition==='false'?'F':'✓'}</span>${escapeHtml(s.title)}<small>${escapeHtml(e.label)}</small></div>`}).join(''):'<div class="description">No prerequisites. This block can start the graph.</div>'}</div>
+      <div class="section"><div class="section-title">Generated / bound artifact</div><div class="route-box">${escapeHtml(n.artifact)}<br><span style="color:#687385">${n.type==='structure'?'input coordinates':'project-local filename'}</span></div></div>
+      <div class="section"><div class="section-title">Output gates</div><div class="evidence"><div class="evidence-row"><span class="check">✓</span>Normal termination required</div>${['optimization','frequency'].includes(n.type)?'<div class="evidence-row"><span class="check">✓</span>Route-specific evidence required</div>':''}<div class="evidence-row"><span class="check">✓</span>Downstream invalidation on edit</div></div></div>
+      <button class="btn primary" style="width:100%" id="connect-selected">Connect from this block</button><button class="btn danger" data-delete-node="${n.id}">Delete block</button></div>`;
+  }
+}
+function addBlock(type) {
+  const def=palette.find(b=>b.type===type); if(!def)return;
+  counter++; const id=`${type}-${Date.now().toString(36)}${counter}`;
+  const n={id,type,kind:type==='decision'?'Output condition':type==='review'?'Recovery branch':type==='structure'?'Structure input':'Gaussian calculation',title:def.title,detail:def.detail,status:'draft',x:35+(counter%3)*28,y:390+(counter%3)*24,artifact:'not configured',route:def.detail};
+  if(type==='decision')Object.assign(n,{metric:'frequencies.imaginaryCount',operator:'=',value:'1'});
+  nodes.push(n); selected={kind:'node',id};renderNodes();renderEdges();renderInspector();fitStage(false);
+  toast('Block added',`${def.title} is a draft. Drag it into place, then connect its input and output.`,'success');
+}
+function deleteNode(id) {
+  const n=nodeById(id);if(!n)return;
+  nodes=nodes.filter(n=>n.id!==id);edges=edges.filter(e=>e.source!==id&&e.target!==id);selected=nodes.length?{kind:'node',id:nodes[0].id}:{kind:'none'};
+  renderNodes();renderEdges();renderInspector();toast('Block removed',`${n.title} and its connections were removed.`,'warning');
+}
+function deleteEdge(id) { edges=edges.filter(e=>e.id!==id);selected={kind:'node',id:'gate'};renderNodes();renderEdges();renderInspector();toast('Connection removed','The downstream block no longer depends on that source.','warning'); }
+function wouldCycle(source,target) {
+  const seen=new Set();function walk(id){if(id===source)return true;if(seen.has(id))return false;seen.add(id);return outgoing(id).some(e=>walk(e.target));}return walk(target);
+}
+function completeConnection(target) {
+  if(!connectingFrom)return;
+  const source=connectingFrom;
+  if(source===target){toast('Connection rejected','A block cannot depend on itself.','warning');return;}
+  if(edges.some(e=>e.source===source&&e.target===target)){toast('Already connected','That dependency already exists.','warning');return;}
+  if(wouldCycle(source,target)){toast('Cycle rejected','This connection would create a dependency loop. Use a new recovery attempt instead.','warning');return;}
+  const s=nodeById(source);const condition=s.type==='decision'?'true':'passed';
+  const e={id:`e${Date.now().toString(36)}`,source,target,class:condition==='true'?'true':'ready',label:condition==='true'?'YES · condition':'on pass',condition,route:s.type==='decision'?'branch':undefined};
+  edges.push(e);connectingFrom=null;selected={kind:'edge',id:e.id};renderNodes();renderEdges();renderInspector();toast('Dependency connected',`${s.title} → ${nodeById(target).title}`,'success');
+}
+function toast(title,message,type='') {
+  const el=document.createElement('div');el.className=`toast ${type}`;el.innerHTML=`<strong>${escapeHtml(title)}</strong><span>${escapeHtml(message)}</span>`;$('#toasts').append(el);setTimeout(()=>el.remove(),3600);
+}
+function applyZoom() { $('#stage').style.transform=`scale(${zoom})`;$('#zoom-value').textContent=`${Math.round(zoom*100)}%`; }
+function fitStage(notify=true) { const v=$('#viewport');zoom=Math.min(1,(v.clientWidth-45)/900,(v.clientHeight-55)/700);zoom=Math.max(.55,zoom);applyZoom();v.scrollTo({top:0,left:0,behavior:'smooth'});if(notify)toast('Canvas fitted','The complete workflow is visible.'); }
+function validateFlow() {
+  const drafts=nodes.filter(n=>n.status==='draft');const isolated=nodes.filter(n=>nodes.length>1&&!incoming(n.id).length&&!outgoing(n.id).length);
+  if(drafts.length||isolated.length){$('#flow-status').textContent='● Configuration needs attention';$('#flow-status').style.color='#fbbf24';toast('Flow needs attention',`${drafts.length} draft block(s), ${isolated.length} isolated block(s). Connect and configure them before export.`,'warning');}
+  else{$('#flow-status').textContent='✓ DAG valid · evidence gates configured';$('#flow-status').style.color='#75d9b7';toast('Flow validated',`${nodes.length} blocks, ${edges.length} dependencies, no cycles. Mockup validation only; no Gaussian job was run.`,'success');}
+}
+function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+$('#library-search').addEventListener('input',e=>renderLibrary(e.target.value));
+$('#library-list').addEventListener('click',e=>{const b=e.target.closest('[data-add]');if(b)addBlock(b.dataset.add);});
+$('#nodes').addEventListener('click',e=>{
+  const port=e.target.closest('.port');
+  if(port){e.stopPropagation();if(port.dataset.port==='output'){connectingFrom=port.dataset.node;selected={kind:'node',id:connectingFrom};renderNodes();renderInspector();toast('Connection started',`Now click the input port on the block that depends on ${nodeById(connectingFrom)?.title||'this block'}.`);}else completeConnection(port.dataset.node);return;}
+  const node=e.target.closest('[data-node]');if(node)selectNode(node.dataset.node);
+});
+$('#edges').addEventListener('click',e=>{
+  const hit=e.target.closest('[data-edge-hit],[data-edge-label]');
+  if(hit)selectEdge(hit.dataset.edgeHit||hit.dataset.edgeLabel);
+});
+$('#nodes').addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-node]')){e.preventDefault();selectNode(e.target.dataset.node);}});
+let drag=null;
+$('#nodes').addEventListener('pointerdown',e=>{
+  if(e.button!==0||e.target.closest('.port'))return;const el=e.target.closest('[data-node]');if(!el)return;
+  const n=nodeById(el.dataset.node);
+  selected={kind:'node',id:n.id};connectingFrom=null;
+  document.querySelectorAll('.flow-node').forEach(card=>{card.classList.toggle('selected',card.dataset.node===n.id);card.classList.remove('connecting');});
+  renderEdges();renderInspector();
+  drag={id:n.id,startX:e.clientX,startY:e.clientY,x:n.x,y:n.y,moved:false,el};el.setPointerCapture(e.pointerId);
+});
+$('#nodes').addEventListener('pointermove',e=>{if(!drag)return;const dx=(e.clientX-drag.startX)/zoom,dy=(e.clientY-drag.startY)/zoom;if(Math.abs(dx)+Math.abs(dy)>2)drag.moved=true;const n=nodeById(drag.id);n.x=Math.max(0,Math.min(728,drag.x+dx));n.y=Math.max(0,Math.min(574,drag.y+dy));drag.el.style.left=`${n.x}px`;drag.el.style.top=`${n.y}px`;renderEdges();});
+$('#nodes').addEventListener('pointerup',()=>{if(drag?.moved){$('#save-state').textContent='Local concept · layout updated';}drag=null;});
+$('#inspector').addEventListener('input',e=>{
+  if(e.target.id==='gate-value'){const n=nodeById(selected.id);if(!n||n.type!=='decision')return;n.value=e.target.value;$('#gate-expression').textContent=`${n.metric} ${n.operator} ${n.value}`;n.detail=`Nᵢₘₐg ${n.operator} ${n.value}`;renderNodes();}
+  if(e.target.id==='node-title-input'){const n=nodeById(selected.id);n.title=e.target.value;$('#inspector-node-title').textContent=n.title;renderNodes();}
+  if(e.target.id==='node-route-input'){const n=nodeById(selected.id);n.route=e.target.value;n.detail=e.target.value;renderNodes();}
+});
+$('#inspector').addEventListener('change',e=>{
+  if(e.target.id==='gate-operator'){const n=nodeById(selected.id);n.operator=e.target.value;$('#gate-expression').textContent=`${n.metric} ${n.operator} ${n.value}`;n.detail=`Nᵢₘₐg ${n.operator} ${n.value}`;renderNodes();}
+  if(e.target.id==='gate-metric'){const n=nodeById(selected.id);n.metric=e.target.value;$('#gate-expression').textContent=`${n.metric} ${n.operator} ${n.value}`;}
+  if(e.target.id==='edge-condition'){const edge=edges.find(x=>x.id===selected.id);edge.condition=e.target.value;edge.class={passed:'ready',true:'true',false:'false',failed:'false',always:''}[edge.condition];edge.label={passed:'on pass',true:'YES · condition',false:'NO · condition',failed:'on failure',always:'data only'}[edge.condition];edge.route=['true','false'].includes(edge.condition)?'branch':undefined;renderEdges();toast('Connection logic updated',edge.label,'success');}
+});
+$('#inspector').addEventListener('click',e=>{
+  if(e.target.closest('[data-delete-node]'))deleteNode(e.target.closest('[data-delete-node]').dataset.deleteNode);
+  if(e.target.id==='delete-edge')deleteEdge(selected.id);
+  if(e.target.id==='unknown-toggle'){blockUnknown=!blockUnknown;renderInspector();}
+  if(e.target.id==='edge-checkpoint'){const edge=edges.find(x=>x.id===selected.id);const hasChk=/chk/i.test(edge.label);edge.label=hasChk?edge.label.replace(/\s*·\s*(?:%OldChk|CHK)/ig,'').replace(/%OldChk|CHK/ig,'on pass'):`${edge.label} · CHK`;renderEdges();renderInspector();}
+  if(e.target.id==='connect-selected'){connectingFrom=selected.id;renderNodes();toast('Connection started','Click another block’s input port to create a dependency.');}
+});
+$('#validate').addEventListener('click',validateFlow);
+$('#zoom-in').addEventListener('click',()=>{zoom=Math.min(1.35,zoom+.1);applyZoom();});
+$('#zoom-out').addEventListener('click',()=>{zoom=Math.max(.5,zoom-.1);applyZoom();});
+$('#zoom-fit').addEventListener('click',()=>fitStage());
+$('#auto-layout').addEventListener('click',()=>{nodes=structuredClone(initialNodes);selected={kind:'node',id:'gate'};renderNodes();renderEdges();renderInspector();fitStage(false);toast('Example layout restored','Block positions and settings were reset to the TS-verification example.','success');});
+$('#delete-selected').addEventListener('click',()=>{if(selected.kind==='node')deleteNode(selected.id);else if(selected.kind==='edge')deleteEdge(selected.id);});
+$('#connect-tool').addEventListener('click',()=>{if(selected.kind!=='node')return toast('Select a block first','Choose the source block, then start a connection.','warning');connectingFrom=selected.id;renderNodes();toast('Connection started','Now click another block’s input port.');});
+$('#select-tool').addEventListener('click',()=>{connectingFrom=null;renderNodes();toast('Select mode','Drag blocks to arrange the graph.');});
+$('.view-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(!b)return;if(b.dataset.view==='design')return;toast(`${b.textContent.trim()} view`,'This concept focuses on the graph designer. Run history and artifact browsing would be separate workbench views.');});
+$('#export').addEventListener('click',()=>$('#export-modal').classList.remove('hidden'));
+$('#close-export').addEventListener('click',()=>$('#export-modal').classList.add('hidden'));
+$('#export-modal').addEventListener('click',e=>{if(e.target.id==='export-modal')e.target.classList.add('hidden');});
+$('#mock-download').addEventListener('click',()=>{toast('Manifest previewed','1 ready input · 1 blocked input · external execution required.','success');$('#export-modal').classList.add('hidden');});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){connectingFrom=null;$('#export-modal').classList.add('hidden');renderNodes();}if((e.key==='Delete'||e.key==='Backspace')&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)){if(selected.kind==='node')deleteNode(selected.id);}});
+$('#project-name').addEventListener('input',()=>$('#save-state').textContent='Local concept · project renamed');
+renderLibrary();renderNodes();renderEdges();renderInspector();requestAnimationFrame(()=>fitStage(false));
+</script>
+</body>
+</html>

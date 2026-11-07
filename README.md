@@ -219,6 +219,15 @@ The suite covers generators, parsers, validators, the workflow model/gates, bund
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module/data-flow map and [docs/VALIDATION.md](docs/VALIDATION.md) for exactly what each gate does and does not prove.
 
+### Design sketches
+
+`sketches/` keeps two self-contained, static interaction concepts for a future visual workflow editor as design artifacts, not shipped UI:
+
+- **Node studio** — a freeform directed graph with typed ports, checkpoint hand-offs, and a condition block whose TRUE/FALSE edges gate downstream work.
+- **Guided runbook** — an ordered protocol with nested branches, a readiness/next-action inspector, and explicit external-handoff steps.
+
+Open either `index.html` directly in a browser: no build step, no external dependency, no Gaussian execution. [`sketches/README.md`](sketches/README.md) compares the two and recommends the node-studio direction while borrowing the runbook's next-action and blocked-reason panels. Both concepts assume **conditional branches** that the current project model does not implement — today a task is simply blocked until its gates pass — so adopting either needs a model decision before UI work.
+
 ---
 
 ## Versioning and releases
